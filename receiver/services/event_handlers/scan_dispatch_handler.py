@@ -152,7 +152,7 @@ class ScanDispatchHandler:
                             logger.warning(f"⚠️  Node {node.name} ({node.node_id}) is not reachable, skipping")
                             continue
 
-                        if node.permission not in ['WRITE_ONLY', 'READ_WRITE']:
+                        if node.permission.upper() not in ['WRITE_ONLY', 'READ_WRITE']:
                             logger.warning(f"⚠️  Node {node.name} ({node.node_id}) does not have WRITE permission (permission: {node.permission}), skipping")
                             continue
 
@@ -263,7 +263,7 @@ class ScanDispatchHandler:
             subject_response = await sync_to_async(api_client.get_subject)(subject_id)
             subject_data = subject_response.get('subject', {})
 
-            session_response = await sync_to_async(api_client.get_session)(subject_id, session_id)
+            session_response = await sync_to_async(api_client.get_session)(session_id)
             session_data = session_response.get('session', {})
 
             from receiver.controllers.phi_resolver import PHIResolver

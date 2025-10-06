@@ -477,12 +477,6 @@ class GetHandler:
             transfer_syntax: Transfer syntax UID
         """
         try:
-            dataset.is_little_endian = transfer_syntax in [
-                ImplicitVRLittleEndian,
-                ExplicitVRLittleEndian
-            ]
-            dataset.is_implicit_VR = (transfer_syntax == ImplicitVRLittleEndian)
-
             if not hasattr(dataset, 'file_meta') or dataset.file_meta is None:
                 dataset.file_meta = pydicom.dataset.FileMetaDataset()
 
@@ -492,8 +486,6 @@ class GetHandler:
             dataset.file_meta.ImplementationClassUID = pydicom.uid.PYDICOM_IMPLEMENTATION_UID
             dataset.file_meta.ImplementationVersionName = "PYDICOM"
             dataset.file_meta.FileMetaInformationVersion = b'\x00\x01'
-
-            dataset.fix_meta_info(enforce_standard=True)
 
         except Exception as e:
             logger.warning(f"Error preparing dataset: {e}")
