@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 from typing import Dict, Any
 from asgiref.sync import sync_to_async
+from pydicom import dcmread
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,12 @@ class ScanDispatchHandler:
                 logger.error(" Failed to extract scan archive")
                 return False
 
+            resolved_dir = await self._resolve_dicom_files(dicom_dir)
+
+            if not resolved_dir:
+                logger.error(" Failed to resolve PHI in DICOM files")
+                return False
+
             scan_label = f"Scan #{scan_number or 'Unknown'} ({modality or 'Unknown'})"
 
             patient_info = await self._get_patient_info(subject_id, session_id)
@@ -106,7 +113,7 @@ class ScanDispatchHandler:
             for node in matching_nodes:
                 logger.info(f"   - {node.name} @ {node.host}:{node.port} (AE: {node.ae_title})")
 
-            success = await self._send_to_nodes(matching_nodes, dicom_dir, scan_label, patient_info)
+            success = await self._send_to_nodes(matching_nodes, resolved_dir, scan_label, patient_info)
 
             await self._cleanup(scan_path, dicom_dir)
 
@@ -244,6 +251,46 @@ class ScanDispatchHandler:
             logger.error(f"Error extracting scan: {e}", exc_info=True)
             return None
 
+    async def _resolve_dicom_files(self, dicom_dir: Path) -> Path:
+        """
+        Resolve PHI in all DICOM files (de-anonymize).
+
+        Args:
+            dicom_dir: Directory containing anonymized DICOM files
+
+        Returns:
+            Path to directory with resolved files, or None if failed
+        """
+        try:
+            def _resolve():
+                from receiver.controllers.phi_resolver import PHIResolver
+                resolver = PHIResolver()
+
+                dcm_files = list(dicom_dir.rglob('*.dcm'))
+                logger.info(f"🔍 Resolving PHI for {len(dcm_files)} DICOM files...")
+
+                resolved_count = 0
+                for dcm_file in dcm_files:
+                    try:
+                        ds = dcmread(str(dcm_file))
+
+                        ds = resolver.resolve_dataset(ds)
+
+                        ds.save_as(str(dcm_file))
+                        resolved_count += 1
+
+                    except Exception as e:
+                        logger.warning(f"Failed to resolve {dcm_file.name}: {e}")
+
+                logger.info(f"✅ Resolved PHI for {resolved_count}/{len(dcm_files)} files")
+                return dicom_dir
+
+            return await sync_to_async(_resolve)()
+
+        except Exception as e:
+            logger.error(f"Error resolving DICOM files: {e}", exc_info=True)
+            return None
+
     async def _get_patient_info(self, subject_id: str, session_id: str) -> Dict[str, str]:
         """
         Get patient and study information from API.
@@ -272,7 +319,7 @@ class ScanDispatchHandler:
             anonymous_name = subject_data.get('label', '')
             anonymous_id = anonymous_name if anonymous_name else subject_data.get('subject_identifier', '')
 
-            original = resolver.resolve_patient(
+            original = await sync_to_async(resolver.resolve_patient)(
                 anonymous_name=anonymous_name,
                 anonymous_id=anonymous_id
             )
