@@ -257,7 +257,7 @@ class ProxyConfigService:
 
     def is_auto_dispatch_enabled(self) -> bool:
         """Check if auto-dispatch to FlairStar is enabled."""
-        return self._proxy_config.get('flairstar_auto_dispatch_result', True) if self._proxy_config else True
+        return True
 
     def apply_to_proxy_model(self, config_data: Dict[str, Any]) -> bool:
         """
