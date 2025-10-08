@@ -121,7 +121,7 @@ class DicomServiceProvider:
 
     def _study_complete_handler(self, study_uid: str) -> None:
         """
-        Handle study completion: zip and upload to Laminate API.
+        Handle study completion: zip and upload to ITH API.
         Thread-safe to prevent duplicate processing.
 
         Args:
@@ -162,7 +162,7 @@ class DicomServiceProvider:
 
     def _archive_and_upload_study(self, study_uid: str, study, stats) -> None:
         """
-        Create ZIP archive and upload study to Laminate API.
+        Create ZIP archive and upload study to ITH API.
 
         Args:
             study_uid: Study Instance UID
@@ -210,7 +210,7 @@ class DicomServiceProvider:
                 }
             }
 
-            logger.info(f"Uploading study to Laminate API: {study_uid}")
+            logger.info(f"Uploading study to ITH API: {study_uid}")
             success, response_data = uploader.upload_study(zip_path, study_info)
 
             if success:

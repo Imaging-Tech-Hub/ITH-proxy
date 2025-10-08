@@ -1,10 +1,10 @@
 """
-Session-related commands for Laminate API.
+Session-related commands for ITH API.
 """
 from pathlib import Path
 from typing import Dict, Any, Optional
 from .base import Command, CommandResult
-from receiver.services.laminate_api_client import LaminateAPIClient
+from receiver.services.ith_api_client import IthAPIClient
 
 
 class ListSessionsCommand(Command):
@@ -18,12 +18,12 @@ class ListSessionsCommand(Command):
             sessions = result.data['sessions']
     """
 
-    def __init__(self, client: LaminateAPIClient, **filters):
+    def __init__(self, client: IthAPIClient, **filters):
         """
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             **filters: Optional filters (subject_id, modality, etc.)
         """
         super().__init__()
@@ -63,12 +63,12 @@ class GetSessionCommand(Command):
             session = result.data['session']
     """
 
-    def __init__(self, client: LaminateAPIClient, session_id: str, include_deleted: bool = False):
+    def __init__(self, client: IthAPIClient, session_id: str, include_deleted: bool = False):
         """
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             session_id: Session identifier
             include_deleted: Include if soft-deleted
         """
@@ -126,7 +126,7 @@ class DownloadSessionCommand(Command):
 
     def __init__(
         self,
-        client: LaminateAPIClient,
+        client: IthAPIClient,
         session_id: str,
         subject_id: str,
         output_path: Path,
@@ -137,7 +137,7 @@ class DownloadSessionCommand(Command):
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             session_id: Session identifier
             subject_id: Parent subject ID
             output_path: Path to save archive

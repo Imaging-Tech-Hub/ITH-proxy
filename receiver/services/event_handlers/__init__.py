@@ -1,6 +1,6 @@
 """
 WebSocket Event Handlers.
-Handles events received from Laminate backend via WebSocket.
+Handles events received from ITH backend via WebSocket.
 """
 # Dispatch handlers
 from .session_dispatch_handler import SessionDispatchHandler

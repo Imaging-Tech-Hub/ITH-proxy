@@ -1,10 +1,10 @@
 """
-Subject-related commands for Laminate API.
+Subject-related commands for ITH API.
 """
 from pathlib import Path
 from typing import Dict, Any, Optional
 from .base import Command, CommandResult
-from receiver.services.laminate_api_client import LaminateAPIClient
+from receiver.services.ith_api_client import IthAPIClient
 
 
 class ListSubjectsCommand(Command):
@@ -18,12 +18,12 @@ class ListSubjectsCommand(Command):
             subjects = result.data['subjects']
     """
 
-    def __init__(self, client: LaminateAPIClient, **filters):
+    def __init__(self, client: IthAPIClient, **filters):
         """
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             **filters: Optional filters (species, search_query, etc.)
         """
         super().__init__()
@@ -63,12 +63,12 @@ class GetSubjectCommand(Command):
             subject = result.data['subject']
     """
 
-    def __init__(self, client: LaminateAPIClient, subject_id: str, include_deleted: bool = False):
+    def __init__(self, client: IthAPIClient, subject_id: str, include_deleted: bool = False):
         """
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             subject_id: Subject identifier
             include_deleted: Include if soft-deleted
         """
@@ -126,7 +126,7 @@ class DownloadSubjectCommand(Command):
 
     def __init__(
         self,
-        client: LaminateAPIClient,
+        client: IthAPIClient,
         subject_id: str,
         output_path: Path,
         compression_format: str = 'zip',
@@ -136,7 +136,7 @@ class DownloadSubjectCommand(Command):
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             subject_id: Subject identifier
             output_path: Path to save archive
             compression_format: zip or tar.gz

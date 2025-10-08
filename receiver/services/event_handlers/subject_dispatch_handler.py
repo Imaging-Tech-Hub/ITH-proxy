@@ -1,6 +1,6 @@
 """
 Subject Dispatch Event Handler.
-Handles subject.dispatch events from Laminate backend.
+Handles subject.dispatch events from ITH backend.
 """
 import asyncio
 import logging
@@ -153,7 +153,7 @@ class SubjectDispatchHandler:
         subject_id: str
     ) -> Path:
         """
-        Download subject from Laminate API.
+        Download subject from ITH API.
 
         Args:
             workspace_id: Workspace ID
@@ -166,7 +166,7 @@ class SubjectDispatchHandler:
             from receiver.containers import container
 
             def _download():
-                api_client = container.laminate_api_client()
+                api_client = container.ith_api_client()
                 api_client.workspace_id = workspace_id
 
                 temp_dir = Path(tempfile.gettempdir()) / "subject_dispatch"

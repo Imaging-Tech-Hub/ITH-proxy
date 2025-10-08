@@ -1,6 +1,6 @@
 """
 Proxy Config Changed Event Handler.
-Handles proxy.config_changed events from Laminate backend.
+Handles proxy.config_changed events from ITH backend.
 """
 import logging
 from typing import Dict, Any

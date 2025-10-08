@@ -4,7 +4,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Laminate Backend                            │
+│                     ITH Backend                            │
 │                                                                 │
 │  Sends events:                                                  │
 │  - ping (keep-alive)                                            │
@@ -113,7 +113,7 @@ websockets/
        # Send initial status
        send_status("downloading")
 
-       # Download from Laminate API
+       # Download from ITH API
        result = DownloadSessionCommand(...).execute()
 
        # Extract files
@@ -173,7 +173,7 @@ websockets/
 
 All dispatch handlers follow similar pattern:
 1. Check if requested nodes are managed by this proxy
-2. Download entity from Laminate REST API
+2. Download entity from ITH REST API
 3. Extract downloaded archive
 4. Send DICOM files to target PACS nodes
 5. Report progress to backend
@@ -199,14 +199,14 @@ All dispatch handlers follow similar pattern:
 - **Receives:** `proxy.nodes_changed`
 - **Actions:**
   1. Parse node configurations from payload
-  2. Save to `~/.laminate-proxy/nodes.json`
+  2. Save to `~/.ith-proxy/nodes.json`
   3. Handle actions: `added`, `removed`, `updated`, `replaced`
 
 #### ProxyConfigChangedHandler
 - **Receives:** `proxy.config_changed`
 - **Actions:**
   1. Apply configuration changes
-  2. Save to `~/.laminate-proxy/proxy.json`
+  2. Save to `~/.ith-proxy/proxy.json`
   3. Log changes
 
 #### ProxyStatusChangedHandler
@@ -261,7 +261,7 @@ wscat -c "ws://localhost:8000/proxy/ws?proxy_key=pk_test123"
 
 ## Configuration Files
 
-### Node Configuration (`~/.laminate-proxy/nodes.json`)
+### Node Configuration (`~/.ith-proxy/nodes.json`)
 ```json
 {
   "nodes": [
@@ -278,7 +278,7 @@ wscat -c "ws://localhost:8000/proxy/ws?proxy_key=pk_test123"
 }
 ```
 
-### Proxy Status (`~/.laminate-proxy/status.json`)
+### Proxy Status (`~/.ith-proxy/status.json`)
 ```json
 {
   "status": "active",

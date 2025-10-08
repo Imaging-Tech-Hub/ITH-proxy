@@ -1,6 +1,6 @@
 """
 New Scan Available Event Handler.
-Handles scan.new_scan_available events from Laminate backend (e.g., FlairStar analysis completion).
+Handles scan.new_scan_available events from ITH backend (e.g., FlairStar analysis completion).
 """
 import asyncio
 import logging
@@ -192,7 +192,7 @@ class NewScanAvailableHandler:
         session_id: str
     ) -> Path:
         """
-        Download scan from Laminate API.
+        Download scan from ITH API.
 
         Args:
             workspace_id: Workspace ID
@@ -207,7 +207,7 @@ class NewScanAvailableHandler:
             from receiver.containers import container
 
             def _download():
-                api_client = container.laminate_api_client()
+                api_client = container.ith_api_client()
                 api_client.workspace_id = workspace_id
 
                 temp_dir = Path(tempfile.gettempdir()) / "new_scan_available"

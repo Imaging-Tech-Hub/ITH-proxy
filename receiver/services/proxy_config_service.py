@@ -1,13 +1,13 @@
 """
 Proxy Configuration Service.
-Loads proxy configuration from Laminate API and manages node configurations in-memory.
+Loads proxy configuration from ITH API and manages node configurations in-memory.
 """
 import logging
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from receiver.utils.node_config import NodeConfig
 
 if TYPE_CHECKING:
-    from receiver.services.laminate_api_client import LaminateAPIClient
+    from receiver.services.ith_api_client import IthAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class ProxyConfigService:
     """
     Service for loading and managing proxy configuration in-memory.
 
-    Uses LaminateAPIClient to fetch configuration from:
+    Uses IthAPIClient to fetch configuration from:
     GET /api/v1/proxy/configuration
 
     Manages:
@@ -26,12 +26,12 @@ class ProxyConfigService:
     - Health status
     """
 
-    def __init__(self, api_client: 'LaminateAPIClient'):
+    def __init__(self, api_client: 'IthAPIClient'):
         """
         Initialize proxy config service.
 
         Args:
-            api_client: LaminateAPIClient instance (injected via DI)
+            api_client: IthAPIClient instance (injected via DI)
         """
         self.api_client = api_client
 
@@ -41,7 +41,7 @@ class ProxyConfigService:
 
     def fetch_configuration(self) -> Optional[Dict[str, Any]]:
         """
-        Fetch complete proxy configuration from API using LaminateAPIClient.
+        Fetch complete proxy configuration from API using IthAPIClient.
 
         Returns:
             Configuration dictionary or None if failed
@@ -292,7 +292,7 @@ class ProxyConfigService:
 
     def load_and_apply_configuration(self) -> bool:
         """
-        Complete flow: Fetch configuration, save locally, and apply to model.
+        Complete flow: Fetch configuration and save locally (in-memory).
 
         Returns:
             bool: True if successful
@@ -304,9 +304,7 @@ class ProxyConfigService:
 
         self.save_configuration(config_data)
 
-        self.apply_to_proxy_model(config_data)
-
-        logger.info("Configuration loaded and applied successfully")
+        logger.info("Configuration loaded successfully (stored in-memory)")
         return True
 
 

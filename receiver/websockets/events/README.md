@@ -5,7 +5,7 @@
 ```
 events/
 ├── base.py                          # Base WebSocketEvent class
-├── incoming/                        # Incoming events (from Laminate backend)
+├── incoming/                        # Incoming events (from ITH backend)
 │   ├── ping.py                      # Keep-alive ping
 │   ├── session_deleted.py           # Session deletion notification
 │   ├── scan_deleted.py              # Scan deletion notification
@@ -15,7 +15,7 @@ events/
 │   ├── proxy_nodes_changed.py       # Node configuration update
 │   ├── proxy_config_changed.py      # Proxy configuration update
 │   └── proxy_status_changed.py      # Proxy status update
-└── outgoing/                        # Outgoing events (to Laminate backend)
+└── outgoing/                        # Outgoing events (to ITH backend)
     ├── pong.py                      # Pong response
     ├── dispatch_status.py           # Dispatch operation status
     └── proxy_heartbeat.py           # Proxy health status
@@ -23,7 +23,7 @@ events/
 
 ## Incoming Events (events/incoming/)
 
-Events received from the Laminate backend that the proxy must handle.
+Events received from the ITH backend that the proxy must handle.
 
 ### Ping Event
 - **Type**: `ping`
@@ -46,7 +46,7 @@ Events received from the Laminate backend that the proxy must handle.
 
 ## Outgoing Events (events/outgoing/)
 
-Events sent from the proxy to the Laminate backend.
+Events sent from the proxy to the ITH backend.
 
 ### Pong Event
 - **Type**: `pong`
@@ -119,10 +119,3 @@ event_dict = event.to_dict()
 # Send via WebSocket
 await websocket.send(json.dumps(event_dict))
 ```
-
-## Event Payload Structures
-
-All payload structures match exactly with the WebSocket documentation at:
-`/Users/amrshadid/Desktop/Laminate project/repos/proxy/docs/PROXY_WEBSOCKET.md`
-
-Each event file contains the exact payload structure from the documentation in its docstring.

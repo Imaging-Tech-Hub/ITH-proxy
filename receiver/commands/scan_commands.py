@@ -1,10 +1,10 @@
 """
-Scan-related commands for Laminate API.
+Scan-related commands for ITH API.
 """
 from pathlib import Path
 from typing import Dict, Any, Optional
 from .base import Command, CommandResult
-from receiver.services.laminate_api_client import LaminateAPIClient
+from receiver.services.ith_api_client import IthAPIClient
 
 
 class ListScansCommand(Command):
@@ -20,7 +20,7 @@ class ListScansCommand(Command):
 
     def __init__(
         self,
-        client: LaminateAPIClient,
+        client: IthAPIClient,
         subject_id: str,
         session_id: str,
         **filters
@@ -29,7 +29,7 @@ class ListScansCommand(Command):
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             subject_id: Subject ID (required)
             session_id: Session ID (required)
             **filters: Optional filters (modality, quality, etc.)
@@ -89,12 +89,12 @@ class GetScanCommand(Command):
             scan = result.data['scan']
     """
 
-    def __init__(self, client: LaminateAPIClient, scan_id: str, include_deleted: bool = False):
+    def __init__(self, client: IthAPIClient, scan_id: str, include_deleted: bool = False):
         """
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             scan_id: Scan identifier
             include_deleted: Include if soft-deleted
         """
@@ -153,7 +153,7 @@ class DownloadScanCommand(Command):
 
     def __init__(
         self,
-        client: LaminateAPIClient,
+        client: IthAPIClient,
         scan_id: str,
         subject_id: str,
         session_id: str,
@@ -165,7 +165,7 @@ class DownloadScanCommand(Command):
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             scan_id: Scan identifier
             subject_id: Parent subject ID
             session_id: Parent session ID

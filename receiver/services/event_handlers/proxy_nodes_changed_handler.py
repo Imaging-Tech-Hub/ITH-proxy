@@ -1,6 +1,6 @@
 """
 Proxy Nodes Changed Event Handler.
-Handles proxy.nodes_changed events from Laminate backend.
+Handles proxy.nodes_changed events from ITH backend.
 """
 import logging
 from typing import Dict, Any

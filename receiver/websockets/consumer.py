@@ -1,6 +1,6 @@
 """
 WebSocket Consumer for Proxy Real-time Communication.
-Handles bidirectional communication between proxy and Laminate backend.
+Handles bidirectional communication between proxy and ITH backend.
 """
 import json
 import asyncio

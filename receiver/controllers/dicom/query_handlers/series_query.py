@@ -81,7 +81,7 @@ class SeriesQueryHandler:
         logger.info(f"Found {len(series_list)} series in local database")
 
         if not series_list and self.api_query_service:
-            logger.info("No local series found, querying Laminate API...")
+            logger.info("No local series found, querying ITH API...")
             study_uid = query_ds.StudyInstanceUID if hasattr(query_ds, 'StudyInstanceUID') else None
             if study_uid:
                 api_series = self.api_query_service.query_series_for_study(study_uid)

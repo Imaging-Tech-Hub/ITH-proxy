@@ -232,7 +232,7 @@ def get_logging_config():
                 'handlers': ['console', 'api_file', 'error_file'] if debug_mode else ['api_file', 'error_file'],
                 'propagate': False,
             },
-            'receiver.laminate_client': {
+            'receiver.ith_client': {
                 'level': log_level,
                 'handlers': ['console', 'api_file', 'error_file'] if debug_mode else ['api_file', 'error_file'],
                 'propagate': False,

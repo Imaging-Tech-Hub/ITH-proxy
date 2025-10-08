@@ -1,10 +1,10 @@
 """
 API Query Service
-Fetches DICOM metadata from Laminate API for C-FIND queries when local data is not available.
+Fetches DICOM metadata from ITH API for C-FIND queries when local data is not available.
 """
 import logging
 from typing import Dict, List, Optional, Any
-from receiver.services.laminate_api_client import LaminateAPIClient
+from receiver.services.ith_api_client import IthAPIClient
 from receiver.controllers.phi_resolver import PHIResolver
 
 logger = logging.getLogger(__name__)
@@ -12,16 +12,16 @@ logger = logging.getLogger(__name__)
 
 class APIQueryService:
     """
-    Service for querying DICOM metadata from Laminate API.
+    Service for querying DICOM metadata from ITH API.
     Used as fallback when local storage doesn't have the data (e.g., after cleanup).
     """
 
-    def __init__(self, api_client: LaminateAPIClient, resolver: PHIResolver):
+    def __init__(self, api_client: IthAPIClient, resolver: PHIResolver):
         """
         Initialize API query service.
 
         Args:
-            api_client: LaminateAPIClient instance
+            api_client: IthAPIClient instance
             resolver: PHIResolver for de-anonymization
         """
         self.api_client = api_client
@@ -35,7 +35,7 @@ class APIQueryService:
             List of patient dictionaries with de-anonymized info
         """
         try:
-            logger.info("Querying patients from Laminate API...")
+            logger.info("Querying patients from ITH API...")
 
             response = self.api_client.list_subjects()
             subjects = response.get('subjects', [])
@@ -88,7 +88,7 @@ class APIQueryService:
             List of study dictionaries with de-anonymized info
         """
         try:
-            logger.info("Querying studies from Laminate API...")
+            logger.info("Querying studies from ITH API...")
 
             response = self.api_client.list_sessions()
             sessions = response.get('sessions', [])
@@ -469,7 +469,7 @@ def get_api_query_service() -> Optional[APIQueryService]:
     try:
         from receiver.containers import container
 
-        api_client = container.laminate_api_client()
+        api_client = container.ith_api_client()
         resolver = container.phi_resolver()
 
         return APIQueryService(api_client=api_client, resolver=resolver)

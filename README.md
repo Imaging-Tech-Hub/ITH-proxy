@@ -1,16 +1,16 @@
-# Laminate DICOM Proxy
+# ITH DICOM Proxy
 
-A Django-based DICOM proxy service that enables secure medical imaging workflows with PHI anonymization and de-anonymization capabilities. This proxy acts as an intermediary between DICOM modalities and the Laminate platform.
+A Django-based DICOM proxy service that enables secure medical imaging workflows with PHI anonymization and de-anonymization capabilities. This proxy acts as an intermediary between DICOM modalities and the ITH platform.
 
 ## Overview
 
-The Laminate DICOM Proxy is a standalone service that receives medical images from DICOM-enabled devices (CT scanners, MRI machines, etc.), processes them securely, and integrates with the Laminate backend for storage and analysis.
+The ITH DICOM Proxy is a standalone service that receives medical images from DICOM-enabled devices (CT scanners, MRI machines, etc.), processes them securely, and integrates with the ITH backend for storage and analysis.
 
 ## Key Features
 
 - **DICOM Protocol Support**: Full support for C-ECHO, C-STORE, C-FIND, C-GET, and C-MOVE operations
 - **PHI Protection**: Automatic anonymization of Protected Health Information (PHI) with reversible de-anonymization for authorized users
-- **Backend Integration**: Real-time communication with Laminate backend via REST API and WebSocket
+- **Backend Integration**: Real-time communication with ITH backend via REST API and WebSocket
 - **Flexible Configuration**: Dynamic configuration through backend API or local database
 - **Node Management**: Support for dispatching studies to multiple PACS nodes
 - **Study Tracking**: Complete tracking of DICOM studies, series, and instances with status management
@@ -39,8 +39,8 @@ cp .env.example .env
 ```
 
 3. Edit `.env` and configure:
-   - `LAMINATE_API_URL`: URL of your Laminate backend (use `http://host.docker.internal:8000` for local backend)
-   - `PROXY_KEY`: Authentication key from Laminate dashboard
+   - `ITH_URL`: URL of your ITH backend (use `http://host.docker.internal:8000` for local backend)
+   - `ITH_TOKEN`: Authentication key from ITH dashboard
    - `DICOM_PORT`: Port for DICOM service (default: 11112)
    - `DICOM_AE_TITLE`: AE title for this proxy (default: DICOMRCV)
 
@@ -61,11 +61,11 @@ cp .env.example .env
 ```
 
 3. Edit `.env` and configure:
-   - `LAMINATE_API_URL`: URL of your Laminate backend
-   - `PROXY_KEY`: Authentication key from Laminate dashboard
+   - `ITH_URL`: URL of your ITH backend
+   - `ITH_TOKEN`: Authentication key from ITH dashboard
    - `POSTGRES_USER`: PostgreSQL username (default: postgres)
    - `POSTGRES_PASSWORD`: PostgreSQL password (default: postgres)
-   - `POSTGRES_DB`: Database name (default: laminate_proxy)
+   - `POSTGRES_DB`: Database name (default: ith_proxy)
 
 4. Build and start with PostgreSQL:
 ```bash
@@ -123,8 +123,8 @@ cp .env.example .env
 ```
 
 4. Edit `.env` and configure:
-   - `LAMINATE_API_URL`: URL of your Laminate backend
-   - `PROXY_KEY`: Authentication key from Laminate dashboard
+   - `ITH_URL`: URL of your ITH backend
+   - `ITH_TOKEN`: Authentication key from ITH dashboard
    - `DICOM_PORT`: Port for DICOM service (default: 11112)
    - `DICOM_AE_TITLE`: AE title for this proxy (default: DICOMRCV)
 
@@ -143,7 +143,7 @@ python manage.py runserver 0.0.0.0:8080
 The proxy can be configured through:
 
 1. **Environment Variables** (`.env` file): Initial defaults for DICOM settings, backend URL, and authentication
-2. **Backend API**: Dynamic configuration fetched from Laminate backend on startup
+2. **Backend API**: Dynamic configuration fetched from ITH backend on startup
 3. **Local Database**: Configuration changes are persisted locally and can be updated via API
 
 ### Environment Variables
@@ -152,7 +152,7 @@ See `.env.example` for all available configuration options:
 
 - **Django Settings**: `SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`
 - **DICOM Settings**: `DICOM_AE_TITLE`, `DICOM_PORT`, `DICOM_STORAGE_DIR`
-- **Laminate Integration**: `LAMINATE_API_URL`, `PROXY_KEY`
+- **ITH Integration**: `ITH_URL`, `ITH_TOKEN`
 - **Features**: `DICOM_AUTO_START`, `DICOM_ANONYMIZE_PATIENTS`
 
 ## Usage
@@ -184,7 +184,7 @@ The proxy provides REST API endpoints:
 - `GET /api/status/` - Detailed status (requires authentication)
 - `POST /api/phi-metadata/` - Retrieve PHI metadata for a study (requires authentication)
 
-Authentication requires a valid JWT token from the Laminate backend in the Authorization header.
+Authentication requires a valid JWT token from the ITH backend in the Authorization header.
 
 ## PHI Anonymization
 
@@ -198,7 +198,7 @@ This ensures compliance with privacy regulations while maintaining traceability.
 
 ## Node Management
 
-The proxy can dispatch DICOM studies to configured PACS nodes using C-MOVE operations. Nodes are configured through the Laminate backend and automatically synchronized with the proxy.
+The proxy can dispatch DICOM studies to configured PACS nodes using C-MOVE operations. Nodes are configured through the ITH backend and automatically synchronized with the proxy.
 
 ## WebSocket Communication
 
@@ -354,13 +354,13 @@ python manage.py runserver 0.0.0.0:8080
 
 ### Backend Integration Issues
 
-- Verify `LAMINATE_API_URL` is accessible from the proxy
-- Check `PROXY_KEY` is valid and not expired
+- Verify `ITH_URL` is accessible from the proxy
+- Check `ITH_TOKEN` is valid and not expired
 - Review WebSocket connection status in logs
 
 ## Support
 
-For issues and questions, please contact Laminate support or refer to the documentation.
+For issues and questions, please contact ITH support or refer to the documentation.
 
 ## License
 

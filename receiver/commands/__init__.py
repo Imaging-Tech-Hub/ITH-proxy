@@ -1,7 +1,7 @@
 """
-Command Pattern Implementation for Laminate API Operations.
+Command Pattern Implementation for ITH API Operations.
 
-This module provides command classes for consuming the Laminate REST API.
+This module provides command classes for consuming the ITH REST API.
 Commands can be composed and executed in sequence for complex workflows.
 """
 from .base import Command, CommandResult

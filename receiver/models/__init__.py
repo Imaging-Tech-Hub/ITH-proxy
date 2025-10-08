@@ -2,11 +2,9 @@
 from .patient_mapping import PatientMapping
 from .session import Session
 from .scan import Scan
-from .proxy_configuration import ProxyConfiguration
 
 __all__ = [
     'PatientMapping',
     'Session',
     'Scan',
-    'ProxyConfiguration',
 ]

@@ -113,7 +113,7 @@ class StudyQueryHandler:
             logger.info(f"Filtering by Accession Number: {query_ds.AccessionNumber}")
 
         if self.api_query_service:
-            logger.info("🌐 Querying Laminate API for studies...")
+            logger.info("🌐 Querying ITH API for studies...")
             try:
                 api_studies = self.api_query_service.query_all_studies()
                 if api_studies:

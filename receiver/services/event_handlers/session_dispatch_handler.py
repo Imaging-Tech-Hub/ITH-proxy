@@ -1,6 +1,6 @@
 """
 Session Dispatch Event Handler.
-Handles session.dispatch events from Laminate backend.
+Handles session.dispatch events from ITH backend.
 """
 import asyncio
 import logging
@@ -157,7 +157,7 @@ class SessionDispatchHandler:
         subject_id: str
     ) -> Path:
         """
-        Download session from Laminate API.
+        Download session from ITH API.
 
         Args:
             workspace_id: Workspace ID
@@ -171,7 +171,7 @@ class SessionDispatchHandler:
             from receiver.containers import container
 
             def _download():
-                api_client = container.laminate_api_client()
+                api_client = container.ith_api_client()
                 api_client.workspace_id = workspace_id
 
                 temp_dir = Path(tempfile.gettempdir()) / "session_dispatch"

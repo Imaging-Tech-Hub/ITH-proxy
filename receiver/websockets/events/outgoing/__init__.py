@@ -1,5 +1,5 @@
 """
-Outgoing WebSocket Events - Events sent from proxy to Laminate backend.
+Outgoing WebSocket Events - Events sent from proxy to ITH backend.
 """
 from .pong import PongEvent
 from .dispatch_status import DispatchStatusEvent

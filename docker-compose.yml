@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: laminate-proxy
+    container_name: ith-proxy
     restart: unless-stopped
 
     ports:
@@ -46,9 +46,9 @@ services:
       - DICOM_ANONYMIZE_PATIENTS=${DICOM_ANONYMIZE_PATIENTS:-True}
       - DICOM_AUTO_START=${DICOM_AUTO_START:-True}
 
-      # Laminate Backend Integration
-      - LAMINATE_API_URL=${LAMINATE_API_URL:-http://host.docker.internal:8000}
-      - PROXY_KEY=${PROXY_KEY}
+      # ITH Backend Integration
+      - ITH_URL=${ITH_URL:-http://host.docker.internal:8000}
+      - ITH_TOKEN=${ITH_TOKEN}
       - PROXY_VERSION=${PROXY_VERSION:-1.0.0}
 
       # Locale
@@ -56,7 +56,7 @@ services:
       - LANGUAGE_CODE=${LANGUAGE_CODE:-en-us}
 
     networks:
-      - laminate-network
+      - ith-network
 
     healthcheck:
       test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/api/health/', timeout=5)"]
@@ -66,5 +66,5 @@ services:
       start_period: 40s
 
 networks:
-  laminate-network:
+  ith-network:
     driver: bridge

@@ -1,5 +1,5 @@
 """
-Incoming WebSocket Events - Events received from Laminate backend.
+Incoming WebSocket Events - Events received from ITH backend.
 """
 from .ping import PingEvent
 from .session_deleted import SessionDeletedEvent

@@ -1,6 +1,6 @@
 """
 Proxy Status Changed Event Handler.
-Handles proxy.status_changed events from Laminate backend.
+Handles proxy.status_changed events from ITH backend.
 """
 import logging
 from typing import Dict, Any

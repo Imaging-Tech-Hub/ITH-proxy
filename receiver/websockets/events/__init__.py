@@ -3,8 +3,8 @@ WebSocket Events Package.
 
 Organized into:
 - base: Base event class
-- incoming/: Events received from Laminate backend (incoming)
-- outgoing/: Events sent to Laminate backend (outgoing)
+- incoming/: Events received from ITH backend (incoming)
+- outgoing/: Events sent to ITH backend (outgoing)
 """
 from .base import WebSocketEvent
 

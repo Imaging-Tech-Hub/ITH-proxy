@@ -1,6 +1,6 @@
 """
 Authentication backends for Proxy REST API.
-Validates JWT tokens against the Laminate backend API.
+Validates JWT tokens against the ITH backend API.
 """
 import logging
 import requests
@@ -14,7 +14,7 @@ logger = logging.getLogger('receiver.auth')
 
 class BackendTokenAuthentication(authentication.BaseAuthentication):
     """
-    Authentication class that validates JWT tokens against the Laminate backend.
+    Authentication class that validates JWT tokens against the ITH backend.
 
     Extracts the Bearer token from the Authorization header and validates it
     against the backend's /api/v1/auth/tokens/validate endpoint.
@@ -66,7 +66,7 @@ class BackendTokenAuthentication(authentication.BaseAuthentication):
 
     def validate_token(self, token: str) -> Optional[dict]:
         """
-        Validate token against the Laminate backend API.
+        Validate token against the ITH backend API.
 
         Args:
             token: JWT access token
@@ -74,7 +74,7 @@ class BackendTokenAuthentication(authentication.BaseAuthentication):
         Returns:
             User information dict if valid, None otherwise
         """
-        backend_url = getattr(settings, 'LAMINATE_API_URL', 'http://localhost:8000')
+        backend_url = getattr(settings, 'ITH_URL', 'http://localhost:8000')
         validate_endpoint = f"{backend_url}/api/v1/auth/tokens/validate"
 
         try:

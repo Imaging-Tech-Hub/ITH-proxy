@@ -1,4 +1,4 @@
-# Laminate DICOM Proxy Dockerfile
+# ITH DICOM Proxy Dockerfile
 FROM python:3.11-slim
 
 # Set environment variables

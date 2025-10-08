@@ -1,18 +1,18 @@
 """
-Laminate REST API Client.
-Handles all communication with the Laminate backend API.
+ITH REST API Client.
+Handles all communication with the ITH backend API.
 """
 import requests
 import logging
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
-logger = logging.getLogger('receiver.laminate_client')
+logger = logging.getLogger('receiver.ith_client')
 
 
-class LaminateAPIClient:
+class IthAPIClient:
     """
-    Client for Laminate REST API.
+    Client for ITH REST API.
     """
 
     def __init__(self, base_url: str, proxy_key: str, workspace_id: Optional[str] = None):
@@ -20,8 +20,8 @@ class LaminateAPIClient:
         Initialize API client.
 
         Args:
-            base_url: Base URL for API (e.g., https://api.laminate.health)
-            proxy_key: Proxy API key (pk_xxx)
+            base_url: Base URL for API (e.g., http://localhost:8000)
+            proxy_key: Proxy API key
             workspace_id: Workspace identifier (optional, only needed for data access endpoints)
         """
         self.base_url = base_url.rstrip('/')

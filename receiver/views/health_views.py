@@ -27,25 +27,19 @@ class PublicHealthCheckView(APIView):
         Example:
             curl http://localhost:8080/api/health/
         """
-        from receiver.models import ProxyConfiguration
         from django.conf import settings
 
         try:
-            proxy_config = ProxyConfiguration.get_instance()
-            dicom_status = 'online' if proxy_config else 'not_configured'
-
             response_data = {
                 'status': 'healthy',
-                'service': 'laminate-proxy',
+                'service': 'ith-proxy',
                 'version': getattr(settings, 'PROXY_VERSION', '1.0.0'),
-            }
-
-            if proxy_config:
-                response_data['dicom'] = {
-                    'status': dicom_status,
-                    'port': proxy_config.port,
-                    'ae_title': proxy_config.ae_title,
+                'dicom': {
+                    'status': 'online',
+                    'port': settings.DICOM_PORT,
+                    'ae_title': settings.DICOM_AE_TITLE,
                 }
+            }
 
             return Response(response_data)
 
@@ -53,7 +47,7 @@ class PublicHealthCheckView(APIView):
             logger.error(f"Error in health check: {e}", exc_info=True)
             return Response({
                 'status': 'healthy',
-                'service': 'laminate-proxy',
+                'service': 'ith-proxy',
                 'version': getattr(settings, 'PROXY_VERSION', '1.0.0'),
                 'error': 'Configuration unavailable'
             })
@@ -75,7 +69,7 @@ class AuthenticatedStatusView(APIView):
             curl http://localhost:8080/api/status/ \
               -H "Authorization: Bearer <token>"
         """
-        from receiver.models import ProxyConfiguration, Session, Scan
+        from receiver.models import Session, Scan
         from receiver.containers import container
         from django.conf import settings
 
@@ -89,8 +83,6 @@ class AuthenticatedStatusView(APIView):
         }
 
         api_proxy_config = container.proxy_config_service().load_proxy_config()
-
-        db_proxy_config = ProxyConfiguration.get_instance()
 
         nodes = container.proxy_config_service().load_nodes()
         active_nodes = [n for n in nodes if n.is_active]
@@ -111,7 +103,7 @@ class AuthenticatedStatusView(APIView):
 
         return Response({
             'status': 'healthy',
-            'service': 'laminate-proxy',
+            'service': 'ith-proxy',
             'version': getattr(settings, 'PROXY_VERSION', '1.0.0'),
             'timestamp': settings.USE_TZ,
 
@@ -125,11 +117,11 @@ class AuthenticatedStatusView(APIView):
             },
 
             'dicom': {
-                'port': db_proxy_config.port if db_proxy_config else None,
-                'ae_title': db_proxy_config.ae_title if db_proxy_config else None,
-                'ip_address': db_proxy_config.ip_address if db_proxy_config else None,
-                'anonymization_enabled': db_proxy_config.enable_phi_anonymization if db_proxy_config else False,
-                'flairstar_auto_dispatch': db_proxy_config.flairstar_auto_dispatch_result if db_proxy_config else False,
+                'port': settings.DICOM_PORT,
+                'ae_title': settings.DICOM_AE_TITLE,
+                'ip_address': settings.DICOM_BIND_ADDRESS or '0.0.0.0',
+                'anonymization_enabled': settings.DICOM_ANONYMIZE_PATIENTS,
+                'flairstar_auto_dispatch': api_proxy_config.get('flairstar_auto_dispatch_result', True) if api_proxy_config else True,
             },
 
             'nodes': {

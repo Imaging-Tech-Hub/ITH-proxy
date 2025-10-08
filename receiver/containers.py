@@ -32,20 +32,20 @@ class Container(containers.DeclarativeContainer):
         timeout=config.study_timeout
     )
 
-    laminate_api_client = providers.Singleton(
-        'receiver.services.laminate_api_client.LaminateAPIClient',
-        base_url=config.laminate_api_url,
-        proxy_key=config.proxy_key
+    ith_api_client = providers.Singleton(
+        'receiver.services.ith_api_client.IthAPIClient',
+        base_url=config.ith_url,
+        proxy_key=config.ith_token
     )
 
     proxy_config_service = providers.Singleton(
         'receiver.services.proxy_config_service.ProxyConfigService',
-        api_client=laminate_api_client
+        api_client=ith_api_client
     )
 
     api_query_service = providers.Singleton(
         'receiver.services.api_query_service.APIQueryService',
-        api_client=laminate_api_client,
+        api_client=ith_api_client,
         resolver=phi_resolver
     )
 
@@ -112,11 +112,11 @@ def setup_container() -> Container:
     container.config.storage_dir.from_value(settings.DICOM_STORAGE_DIR)
     container.config.study_timeout.from_value(settings.DICOM_STUDY_TIMEOUT)
 
-    container.config.laminate_api_url.from_value(
-        getattr(settings, 'LAMINATE_API_URL', 'https://api.laminate.health')
+    container.config.ith_url.from_value(
+        getattr(settings, 'ITH_URL', 'http://localhost:8000')
     )
-    container.config.proxy_key.from_value(
-        getattr(settings, 'PROXY_KEY', '')
+    container.config.ith_token.from_value(
+        getattr(settings, 'ITH_TOKEN', '')
     )
     container.config.proxy_config_dir.from_value(
         getattr(settings, 'PROXY_CONFIG_DIR', None)

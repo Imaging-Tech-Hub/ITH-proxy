@@ -1,6 +1,6 @@
 """
 Scan Deleted Event Handler.
-Handles scan.deleted events from Laminate backend.
+Handles scan.deleted events from ITH backend.
 """
 import logging
 from typing import Dict, Any

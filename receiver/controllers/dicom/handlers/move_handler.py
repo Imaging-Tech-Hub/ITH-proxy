@@ -230,7 +230,7 @@ class MoveHandler:
         datasets = []
 
         if self.api_query_service:
-            logger.info(" Downloading from Laminate API (latest version)...")
+            logger.info(" Downloading from ITH API (latest version)...")
             api_datasets = self._download_from_api(query_level, study_uid, identifier)
 
             if api_datasets:
@@ -250,7 +250,7 @@ class MoveHandler:
         identifier: Any
     ) -> List[Any]:
         """
-        Download datasets from Laminate API.
+        Download datasets from ITH API.
 
         Args:
             query_level: Query level
@@ -266,7 +266,7 @@ class MoveHandler:
  
             if query_level == 'STUDY' and study_uid:
                 from receiver.containers import container
-                api_client = container.laminate_api_client()
+                api_client = container.ith_api_client()
 
                 sessions_response = api_client.list_sessions()
                 sessions = sessions_response.get('sessions', [])

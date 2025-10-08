@@ -26,8 +26,6 @@ class ReceiverConfig(AppConfig):
         from django.conf import settings
         from receiver.signals import register_shutdown_handlers
 
-        import receiver.signals.proxy_config_signals
-
         register_shutdown_handlers()
 
         self.load_proxy_configuration()

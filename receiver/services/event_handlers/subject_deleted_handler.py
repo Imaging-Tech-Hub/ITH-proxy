@@ -1,6 +1,6 @@
 """
 Subject Deleted Event Handler.
-Handles subject.deleted events from Laminate backend.
+Handles subject.deleted events from ITH backend.
 """
 import logging
 from typing import Dict, Any

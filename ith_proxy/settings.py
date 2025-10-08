@@ -94,7 +94,7 @@ if DATABASE_ENGINE == 'postgresql':
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('POSTGRES_DB', 'laminate_proxy'),
+            'NAME': os.getenv('POSTGRES_DB', 'ith_proxy'),
             'USER': os.getenv('POSTGRES_USER', 'postgres'),
             'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'postgres'),
             'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
@@ -240,7 +240,7 @@ REST_FRAMEWORK = {
     # Pagination
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 100,
-    # Authentication - Validates JWT tokens against Laminate backend
+    # Authentication - Validates JWT tokens against ITH backend
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'receiver.guard.BackendTokenAuthentication',
     ],
@@ -277,14 +277,14 @@ CHANNEL_LAYERS = {
 # }
 
 # =============================================================================
-# Laminate API Configuration
+# ITH API Configuration
 # =============================================================================
 
-# Laminate API Base URL
-LAMINATE_API_URL = os.getenv('LAMINATE_API_URL', 'http://localhost:8000')
+# ITH API Base URL
+ITH_URL = os.getenv('ITH_URL', 'http://localhost:8000')
 
-# Proxy Authentication Key (REQUIRED - get from Laminate dashboard)
-PROXY_KEY = os.getenv('PROXY_KEY', '')
+# Proxy Authentication Token (REQUIRED - get from ITH dashboard)
+ITH_TOKEN = os.getenv('ITH_TOKEN', '')
 
 # Proxy version
 PROXY_VERSION = os.getenv('PROXY_VERSION', '1.0.0')

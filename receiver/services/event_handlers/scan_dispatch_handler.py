@@ -1,6 +1,6 @@
 """
 Scan Dispatch Event Handler.
-Handles scan.dispatch events from Laminate backend.
+Handles scan.dispatch events from ITH backend.
 """
 import asyncio
 import logging
@@ -182,7 +182,7 @@ class ScanDispatchHandler:
         session_id: str
     ) -> Path:
         """
-        Download scan from Laminate API.
+        Download scan from ITH API.
 
         Args:
             workspace_id: Workspace ID
@@ -197,7 +197,7 @@ class ScanDispatchHandler:
             from receiver.containers import container
 
             def _download():
-                api_client = container.laminate_api_client()
+                api_client = container.ith_api_client()
                 api_client.workspace_id = workspace_id
 
                 temp_dir = Path(tempfile.gettempdir()) / "scan_dispatch"
@@ -305,7 +305,7 @@ class ScanDispatchHandler:
         try:
             from receiver.containers import container
 
-            api_client = container.laminate_api_client()
+            api_client = container.ith_api_client()
 
             subject_response = await sync_to_async(api_client.get_subject)(subject_id)
             subject_data = subject_response.get('subject', {})

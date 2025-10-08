@@ -1,6 +1,6 @@
 """
 Session Deleted Event Handler.
-Handles session.deleted events from Laminate backend.
+Handles session.deleted events from ITH backend.
 """
 import logging
 from typing import Dict, Any

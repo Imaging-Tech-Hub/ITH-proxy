@@ -1,11 +1,11 @@
 """
-Archive-related commands for Laminate API.
+Archive-related commands for ITH API.
 """
 import time
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from .base import Command, CommandResult
-from receiver.services.laminate_api_client import LaminateAPIClient
+from receiver.services.ith_api_client import IthAPIClient
 
 
 class CreateArchiveCommand(Command):
@@ -25,7 +25,7 @@ class CreateArchiveCommand(Command):
 
     def __init__(
         self,
-        client: LaminateAPIClient,
+        client: IthAPIClient,
         archive_name: str,
         entity_selections: List[Dict[str, Any]],
         compression_format: str = 'zip',
@@ -35,7 +35,7 @@ class CreateArchiveCommand(Command):
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             archive_name: Name for the archive
             entity_selections: List of entities to include
             compression_format: zip or tar.gz
@@ -116,12 +116,12 @@ class GetArchiveStatusCommand(Command):
             status = result.data['archive']['status']  # processing, completed, failed, expired
     """
 
-    def __init__(self, client: LaminateAPIClient, archive_id: str):
+    def __init__(self, client: IthAPIClient, archive_id: str):
         """
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             archive_id: Archive identifier
         """
         super().__init__()
@@ -176,7 +176,7 @@ class DownloadArchiveCommand(Command):
 
     def __init__(
         self,
-        client: LaminateAPIClient,
+        client: IthAPIClient,
         archive_id: str,
         output_path: Path
     ):
@@ -184,7 +184,7 @@ class DownloadArchiveCommand(Command):
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             archive_id: Archive identifier
             output_path: Path to save archive
         """
@@ -255,7 +255,7 @@ class WaitForArchiveCommand(Command):
 
     def __init__(
         self,
-        client: LaminateAPIClient,
+        client: IthAPIClient,
         archive_id: str,
         timeout: int = 300,
         poll_interval: int = 5,
@@ -265,7 +265,7 @@ class WaitForArchiveCommand(Command):
         Initialize command.
 
         Args:
-            client: Laminate API client
+            client: ITH API client
             archive_id: Archive identifier
             timeout: Max time to wait in seconds
             poll_interval: Time between status checks in seconds

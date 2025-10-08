@@ -8,11 +8,7 @@ import sys
 
 logger = logging.getLogger(__name__)
 
-# Import signal modules to register handlers
-from . import proxy_config_signals
-
 __all__ = [
-    'proxy_config_signals',
     'register_shutdown_handlers',
 ]
 

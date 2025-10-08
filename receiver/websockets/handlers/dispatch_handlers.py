@@ -4,7 +4,7 @@ Handle subject/session/scan dispatch events from backend.
 
 These handlers:
 1. Check if requested nodes are managed by this proxy
-2. Download the entity from Laminate API
+2. Download the entity from ITH API
 3. Send DICOM files to target PACS nodes
 4. Report progress back to backend
 """
@@ -16,7 +16,7 @@ from receiver.commands.subject_commands import DownloadSubjectCommand
 from receiver.commands.session_commands import DownloadSessionCommand
 from receiver.commands.scan_commands import DownloadScanCommand
 from receiver.commands.dicom_send_commands import SendDICOMToMultipleNodesCommand
-from receiver.services.laminate_api_client import LaminateAPIClient
+from receiver.services.ith_api_client import IthAPIClient
 from receiver.utils.node_config import NodeConfig
 
 
@@ -171,12 +171,12 @@ class SubjectDispatchHandler(BaseEventHandler):
 
         return await _load()
 
-    def _get_api_client(self) -> LaminateAPIClient:
+    def _get_api_client(self) -> IthAPIClient:
         """Get configured API client."""
         from django.conf import settings
 
-        return LaminateAPIClient(
-            base_url=settings.LAMINATE_API_URL,
+        return IthAPIClient(
+            base_url=settings.ITH_URL,
             proxy_key=self.consumer.proxy_key,
             workspace_id=self.get_workspace_id()
         )

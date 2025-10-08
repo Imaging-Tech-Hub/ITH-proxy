@@ -1,6 +1,6 @@
 """
 Study Uploader Service
-Uploads DICOM study archives to Laminate API.
+Uploads DICOM study archives to ITH API.
 """
 import logging
 from pathlib import Path
@@ -8,19 +8,19 @@ from typing import Optional, Dict, Any, Tuple, TYPE_CHECKING
 import requests
 
 if TYPE_CHECKING:
-    from receiver.services.laminate_api_client import LaminateAPIClient
+    from receiver.services.ith_api_client import IthAPIClient
 
 logger = logging.getLogger(__name__)
 
 
 class StudyUploader:
     """
-    Uploads DICOM study archives to Laminate API.
+    Uploads DICOM study archives to ITH API.
     """
 
     def __init__(
         self,
-        api_client: 'LaminateAPIClient',
+        api_client: 'IthAPIClient',
         max_retries: int = 3,
         retry_delay: int = 5,
         cleanup_after_upload: bool = False
@@ -29,7 +29,7 @@ class StudyUploader:
         Initialize study uploader.
 
         Args:
-            api_client: LaminateAPIClient instance
+            api_client: IthAPIClient instance
             max_retries: Maximum number of retry attempts
             retry_delay: Delay between retries in seconds
             cleanup_after_upload: Whether to delete files after successful upload
@@ -50,7 +50,7 @@ class StudyUploader:
         study_info: Dict[str, Any]
     ) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
-        Upload a study archive to Laminate API.
+        Upload a study archive to ITH API.
 
         Args:
             zip_path: Path to ZIP archive
@@ -235,7 +235,7 @@ def get_study_uploader() -> Optional[StudyUploader]:
         from receiver.containers import container
         from django.conf import settings
 
-        api_client = container.laminate_api_client()
+        api_client = container.ith_api_client()
 
         # Get settings
         max_retries = getattr(settings, 'UPLOAD_MAX_RETRIES', 3)

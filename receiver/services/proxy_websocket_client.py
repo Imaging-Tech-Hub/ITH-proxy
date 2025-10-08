@@ -1,6 +1,6 @@
 """
 Proxy WebSocket Client.
-Connects to Laminate API WebSocket for real-time communication.
+Connects to ITH API WebSocket for real-time communication.
 
 Based on THIRD_PARTY_PROXY_FLOW.md specification.
 """
@@ -35,7 +35,7 @@ class ProxyWebSocketClient:
         Initialize WebSocket client.
 
         Args:
-            api_url: Base API URL (e.g., https://api.laminate.health)
+            api_url: Base API URL (e.g., http://localhost:8000)
             proxy_key: Proxy authentication key
             health_interval: Seconds between health updates (default: 10)
             reconnect_delay: Seconds to wait before reconnecting (default: 5)
@@ -120,7 +120,7 @@ class ProxyWebSocketClient:
                     return False
 
                 from receiver.containers import container
-                api_client = container.laminate_api_client()
+                api_client = container.ith_api_client()
                 api_client.set_workspace_id(self.workspace_id)
 
                 logger.info(f"WebSocket connected - Workspace: {self.workspace_id}, Proxy: {self.proxy_id}")
@@ -139,7 +139,7 @@ class ProxyWebSocketClient:
                     return False
 
                 from receiver.containers import container
-                api_client = container.laminate_api_client()
+                api_client = container.ith_api_client()
                 api_client.set_workspace_id(self.workspace_id)
 
                 logger.info(f"WebSocket connected via event - Workspace: {self.workspace_id}, Proxy: {self.proxy_id}")
@@ -481,18 +481,23 @@ class ProxyWebSocketClient:
             ConnectionClosedError: If connection closes during config send
         """
         try:
-            from receiver.models import ProxyConfiguration
             from django.conf import settings
-            from asgiref.sync import sync_to_async
+            import socket
 
-            proxy_config = await sync_to_async(ProxyConfiguration.get_instance)()
+            # Get IP address
+            hostname = socket.gethostname()
+            try:
+                ip_address = socket.gethostbyname(hostname)
+            except:
+                ip_address = '127.0.0.1'
+
             proxy_version = getattr(settings, 'PROXY_VERSION', '1.0.0')
 
             await self.send_config_update(
-                ip_address=proxy_config.ip_address,
-                port=proxy_config.port,
-                ae_title=proxy_config.ae_title,
-                resolver_url=proxy_config.resolver_api_url,
+                ip_address=ip_address,
+                port=settings.DICOM_PORT,
+                ae_title=settings.DICOM_AE_TITLE,
+                resolver_url='',
                 proxy_version=proxy_version
             )
 
@@ -534,11 +539,11 @@ def get_websocket_client() -> Optional[ProxyWebSocketClient]:
         SubjectDeletedHandler,
     )
 
-    api_url = getattr(settings, 'LAMINATE_API_URL', None)
-    proxy_key = getattr(settings, 'PROXY_KEY', None)
+    api_url = getattr(settings, 'ITH_URL', None)
+    proxy_key = getattr(settings, 'ITH_TOKEN', None)
 
     if not api_url or not proxy_key:
-        logger.warning("WebSocket client not configured (missing LAMINATE_API_URL or PROXY_KEY)")
+        logger.warning("WebSocket client not configured (missing ITH_URL or ITH_TOKEN)")
         return None
 
     logger.info(f"WebSocket client configured with API URL: {api_url}")

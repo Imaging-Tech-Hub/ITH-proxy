@@ -69,7 +69,7 @@ class ProxyNodesChangedHandler(BaseEventHandler):
         def _save():
             # TODO: Determine proper configuration storage location
             # For now, save to a JSON file
-            config_dir = Path("/etc/laminate-proxy") if Path("/etc/laminate-proxy").exists() else Path.home() / ".laminate-proxy"
+            config_dir = Path("/etc/ith-proxy") if Path("/etc/ith-proxy").exists() else Path.home() / ".ith-proxy"
             config_dir.mkdir(parents=True, exist_ok=True)
 
             config_file = config_dir / "nodes.json"
@@ -164,7 +164,7 @@ class ProxyConfigChangedHandler(BaseEventHandler):
         @sync_to_async
         def _apply():
             # TODO: Determine proper configuration storage location
-            config_dir = Path("/etc/laminate-proxy") if Path("/etc/laminate-proxy").exists() else Path.home() / ".laminate-proxy"
+            config_dir = Path("/etc/ith-proxy") if Path("/etc/ith-proxy").exists() else Path.home() / ".ith-proxy"
             config_dir.mkdir(parents=True, exist_ok=True)
 
             config_file = config_dir / "proxy.json"
@@ -247,7 +247,7 @@ class ProxyStatusChangedHandler(BaseEventHandler):
 
         @sync_to_async
         def _update():
-            config_dir = Path("/etc/laminate-proxy") if Path("/etc/laminate-proxy").exists() else Path.home() / ".laminate-proxy"
+            config_dir = Path("/etc/ith-proxy") if Path("/etc/ith-proxy").exists() else Path.home() / ".ith-proxy"
             config_dir.mkdir(parents=True, exist_ok=True)
 
             status_file = config_dir / "status.json"
