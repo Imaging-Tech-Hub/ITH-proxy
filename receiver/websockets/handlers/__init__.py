@@ -8,7 +8,8 @@ from .deletion_handlers import SessionDeletedHandler, ScanDeletedHandler
 from .dispatch_handlers import (
     SubjectDispatchHandler,
     SessionDispatchHandler,
-    ScanDispatchHandler
+    ScanDispatchHandler,
+    NewScanAvailableHandler
 )
 from .config_handlers import (
     ProxyNodesChangedHandler,
@@ -31,6 +32,7 @@ __all__ = [
     'SubjectDispatchHandler',
     'SessionDispatchHandler',
     'ScanDispatchHandler',
+    'NewScanAvailableHandler',
 
     # Config Handlers
     'ProxyNodesChangedHandler',

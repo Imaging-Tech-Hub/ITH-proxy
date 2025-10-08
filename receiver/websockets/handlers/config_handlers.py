@@ -267,4 +267,4 @@ class ProxyStatusChangedHandler(BaseEventHandler):
     def _get_timestamp(self) -> str:
         """Get current timestamp."""
         from datetime import datetime
-        return datetime.utcnow().isoformat() + 'Z'
+        return datetime.now().isoformat() + 'Z'

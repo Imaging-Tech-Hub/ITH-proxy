@@ -24,7 +24,7 @@ class PingHandler(BaseEventHandler):
         # Respond with pong
         pong_event = {
             "event_type": "pong",
-            "timestamp": datetime.utcnow().isoformat() + 'Z'
+            "timestamp": datetime.now().isoformat() + 'Z'
         }
 
         await self.send_response(pong_event)

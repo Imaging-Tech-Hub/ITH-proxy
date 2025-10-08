@@ -3,7 +3,7 @@ Base WebSocket Event class.
 """
 from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 
@@ -15,7 +15,7 @@ class WebSocketEvent:
     """
     event_type: str = ""
     workspace_id: str = ""
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat() + 'Z')
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat() + 'Z')
     correlation_id: str = field(default_factory=lambda: f"corr_{uuid.uuid4().hex[:12]}")
     entity_type: Optional[str] = None
     entity_id: Optional[str] = None

@@ -211,7 +211,7 @@ class SubjectDispatchHandler(BaseEventHandler):
         status_event = {
             "event_type": "dispatch.status",
             "workspace_id": self.get_workspace_id(),
-            "timestamp": datetime.utcnow().isoformat() + 'Z',
+            "timestamp": datetime.now().isoformat() + 'Z',
             "correlation_id": correlation_id,
             "entity_type": entity_type,
             "entity_id": entity_id,
@@ -467,3 +467,48 @@ class ScanDispatchHandler(SubjectDispatchHandler):
                 scan_id, "scan", "failed",
                 correlation_id, error=str(e)
             )
+
+
+class NewScanAvailableHandler(BaseEventHandler):
+    """
+    Handle scan.new_scan_available events.
+
+    Triggered when new scans are ready (e.g., FlairStar analysis completed).
+    Delegates to the event handler for actual processing.
+    """
+
+    async def handle(self, event: Dict[str, Any]) -> None:
+        """
+        Handle scan.new_scan_available event.
+
+        Payload:
+        {
+          "entity_id": "flairstar_scan_456",
+          "payload": {
+            "subject_id": "subject_789",
+            "session_id": "session_012",
+            "scan_type": "FlairStar",
+            "scan_modality": "Derived",
+            "source": "flairstar_analysis",
+            "action": "pull_and_dispatch",
+            "priority": "normal",
+            "metadata": {...}
+          }
+        }
+        """
+        self.logger.info(f"Handling scan.new_scan_available event: {event.get('entity_id')}")
+
+        try:
+            # Delegate to the actual event handler
+            from receiver.services.event_handlers.new_scan_available_handler import NewScanAvailableHandler as ActualHandler
+
+            handler = ActualHandler()
+            success = await handler.handle(event)
+
+            if success:
+                self.logger.info(f"Successfully processed scan.new_scan_available event")
+            else:
+                self.logger.warning(f"Failed to process scan.new_scan_available event")
+
+        except Exception as e:
+            self.logger.error(f"Error handling scan.new_scan_available: {e}", exc_info=True)
