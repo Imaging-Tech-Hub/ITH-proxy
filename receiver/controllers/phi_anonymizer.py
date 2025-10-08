@@ -38,7 +38,7 @@ class PHIAnonymizer:
         'AdditionalPatientHistory',
         'PatientComments',
         'MedicalRecordLocator',
-        # Study/Series information
+        # Study/Series information - dates/times only
         'StudyDate',
         'SeriesDate',
         'AcquisitionDate',
@@ -48,7 +48,9 @@ class PHIAnonymizer:
         'AcquisitionTime',
         'ContentTime',
         'StudyID',
-        'ProtocolName',
+        # NOTE: ProtocolName excluded - needed for clinical interpretation
+        # NOTE: SeriesDescription excluded - needed for scan identification
+        # NOTE: StudyDescription excluded - needed for study context
         # Institution/Personnel information
         'InstitutionName',
         'InstitutionAddress',
