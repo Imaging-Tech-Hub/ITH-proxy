@@ -121,7 +121,7 @@ class AuthenticatedStatusView(APIView):
                 'ae_title': settings.DICOM_AE_TITLE,
                 'ip_address': settings.DICOM_BIND_ADDRESS or '0.0.0.0',
                 'anonymization_enabled': settings.DICOM_ANONYMIZE_PATIENTS,
-                'flairstar_auto_dispatch': api_proxy_config.get('flairstar_auto_dispatch_result', True) if api_proxy_config else True,
+                'mode': api_proxy_config.get('mode', 'private') if api_proxy_config else 'private',
             },
 
             'nodes': {

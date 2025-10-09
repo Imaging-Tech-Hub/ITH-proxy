@@ -121,7 +121,6 @@ class APIQueryService:
                     subject_response = self.api_client.get_subject(subject_id)
 
                     logger.info(f"✅ Subject API Response:")
-                    logger.info(f"   Full response: {subject_response}")
 
                     subject_data = subject_response.get('subject', {})
                     demographics = subject_data.get('demographics', {})
@@ -179,7 +178,6 @@ class APIQueryService:
                     scans_response = self.api_client.list_scans(subject_id, session_id)
 
                     logger.info(f"✅ Scans API Response:")
-                    logger.info(f"   Full response: {scans_response}")
 
                     scans = scans_response.get('scans', [])
                     logger.info(f"   Found {len(scans)} scans")

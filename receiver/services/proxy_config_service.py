@@ -102,9 +102,8 @@ class ProxyConfigService:
                 'ip_address': proxy_config.get('ip_address'),
                 'port': port,
                 'ae_title': ae_title,
-                'mode': proxy_config.get('mode'),
+                'mode': proxy_config.get('mode', 'private'),  # 'public' or 'private'
                 'enable_phi_anonymization': proxy_config.get('enable_phi_anonymization', False),
-                'flairstar_auto_dispatch_result': proxy_config.get('flairstar_auto_dispatch_result', True),
                 'resolver_information_url': proxy_config.get('resolver_information_url', ''),
                 'is_active': config_data.get('is_active', True),
                 'metadata': config_data.get('metadata', {})
@@ -163,7 +162,7 @@ class ProxyConfigService:
                 max_pdu_size=16384,
                 retry_count=3,
                 retry_delay=5,
-                permission=node.get('permission', 'READ_WRITE'),
+                permission=node.get('permission', 'read_write'),
                 is_reachable=node.get('is_reachable', False),
                 metadata=node.get('metadata', {})
             )
@@ -255,9 +254,22 @@ class ProxyConfigService:
         """Check if PHI anonymization is enabled."""
         return self._proxy_config.get('enable_phi_anonymization', False) if self._proxy_config else False
 
-    def is_auto_dispatch_enabled(self) -> bool:
-        """Check if auto-dispatch to FlairStar is enabled."""
-        return True
+    def get_proxy_mode(self) -> str:
+        """
+        Get proxy mode (public or private).
+
+        Returns:
+            str: 'public' or 'private' (default: 'private')
+        """
+        return self._proxy_config.get('mode', 'private') if self._proxy_config else 'private'
+
+    def is_public_mode(self) -> bool:
+        """Check if proxy is in public mode (no node verification)."""
+        return self.get_proxy_mode() == 'public'
+
+    def is_private_mode(self) -> bool:
+        """Check if proxy is in private mode (requires node verification)."""
+        return self.get_proxy_mode() == 'private'
 
     def apply_to_proxy_model(self, config_data: Dict[str, Any]) -> bool:
         """

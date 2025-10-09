@@ -25,7 +25,7 @@ class NodeConfig:
     is_active: bool = True
     is_reachable: bool = False
 
-    permission: str = "READ_WRITE"
+    permission: str = "read_write"
 
     connection_timeout: int = 30
     max_pdu_size: int = 16384
@@ -64,7 +64,7 @@ class NodeConfig:
             storage_path=data.get('storage_path', ''),
             is_active=data.get('is_active', True),
             is_reachable=data.get('is_reachable', False),
-            permission=data.get('permission', 'READ_WRITE'),
+            permission=data.get('permission', 'read_write'),
             connection_timeout=data.get('connection_timeout', 30),
             max_pdu_size=data.get('max_pdu_size', 16384),
             retry_count=data.get('retry_count', 3),

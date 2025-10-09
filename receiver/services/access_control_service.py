@@ -41,9 +41,9 @@ class AccessControlService:
     - PRIVATE: Only accept operations from configured nodes, enforce permissions
 
     Node Permissions (private mode only):
-    - READ: Can query and retrieve (C-FIND, C-GET, C-MOVE from proxy)
-    - WRITE: Can store (C-STORE to proxy)
-    - READ_WRITE: Can do both
+    - read: Can query and retrieve (C-FIND, C-GET, C-MOVE from proxy)
+    - write: Can store (C-STORE to proxy)
+    - read_write: Can do both
     """
 
     def __init__(self, config_service):
@@ -125,13 +125,13 @@ class AccessControlService:
             logger.warning(f"C-STORE rejected: Node '{calling_ae_title}' is inactive")
             return False, f"Node '{calling_ae_title}' is inactive"
 
-        permission = node.permission.upper() if node.permission else "NONE"
-        if permission in ['WRITE_ONLY', 'READ_WRITE']:
+        permission = node.permission.lower() if node.permission else "none"
+        if permission in ['write', 'read_write']:
             logger.debug(f"C-STORE allowed from {calling_ae_title} (permission: {permission})")
             return True, f"Node has {permission} permission"
         else:
-            logger.warning(f"C-STORE rejected: Node '{calling_ae_title}' has {permission} permission (needs WRITE_ONLY or READ_WRITE)")
-            return False, f"Node has {permission} permission (needs WRITE_ONLY or READ_WRITE)"
+            logger.warning(f"C-STORE rejected: Node '{calling_ae_title}' has {permission} permission (needs write or read_write)")
+            return False, f"Node has {permission} permission (needs write or read_write)"
 
     def can_accept_query(self, calling_ae_title: str) -> Tuple[bool, str]:
         """
@@ -159,13 +159,13 @@ class AccessControlService:
             logger.warning(f"C-FIND rejected: Node '{calling_ae_title}' is inactive")
             return False, f"Node '{calling_ae_title}' is inactive"
 
-        permission = node.permission.upper() if node.permission else "NONE"
-        if permission in ['READ_ONLY', 'READ_WRITE']:
+        permission = node.permission.lower() if node.permission else "none"
+        if permission in ['read', 'read_write']:
             logger.info(f"C-FIND allowed in PRIVATE mode from {calling_ae_title} (permission: {permission})")
             return True, f"Node has {permission} permission"
         else:
-            logger.warning(f"C-FIND REJECTED in PRIVATE mode: Node '{calling_ae_title}' has {permission} permission (needs READ_ONLY or READ_WRITE)")
-            return False, f"Node has {permission} permission (needs READ_ONLY or READ_WRITE)"
+            logger.warning(f"C-FIND REJECTED in PRIVATE mode: Node '{calling_ae_title}' has {permission} permission (needs read or read_write)")
+            return False, f"Node has {permission} permission (needs read or read_write)"
 
     def can_accept_retrieve(self, calling_ae_title: str, operation: str = "C-GET") -> Tuple[bool, str]:
         """
@@ -194,13 +194,13 @@ class AccessControlService:
             logger.warning(f"{operation} rejected: Node '{calling_ae_title}' is inactive")
             return False, f"Node '{calling_ae_title}' is inactive"
 
-        permission = node.permission.upper() if node.permission else "NONE"
-        if permission in ['READ_ONLY', 'READ_WRITE']:
+        permission = node.permission.lower() if node.permission else "none"
+        if permission in ['read', 'read_write']:
             logger.debug(f"{operation} allowed from {calling_ae_title} (permission: {permission})")
             return True, f"Node has {permission} permission"
         else:
-            logger.warning(f"{operation} rejected: Node '{calling_ae_title}' has {permission} permission (needs READ_ONLY or READ_WRITE)")
-            return False, f"Node has {permission} permission (needs READ_ONLY or READ_WRITE)"
+            logger.warning(f"{operation} rejected: Node '{calling_ae_title}' has {permission} permission (needs read or read_write)")
+            return False, f"Node has {permission} permission (needs read or read_write)"
 
     def can_send_to_node(self, destination_ae_title: str) -> Tuple[bool, str]:
         """

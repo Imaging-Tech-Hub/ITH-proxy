@@ -77,17 +77,13 @@ class NewScanAvailableHandler:
                 logger.error(" Missing required fields in scan.new_scan_available event")
                 return False
 
-            auto_dispatch_enabled = await self._is_auto_dispatch_enabled()
-            if not auto_dispatch_enabled:
-                logger.info(f"ℹ️  Auto-dispatch disabled, skipping new scan: {scan_type}")
-                return True
-
-            target_nodes = await self._get_auto_dispatch_nodes()
+            # Get target nodes for dispatch
+            target_nodes = await self._get_dispatch_nodes()
             if not target_nodes:
-                logger.info(f"ℹ️  No nodes configured for auto-dispatch, skipping")
+                logger.info(f"ℹ️  No nodes configured for dispatch, skipping")
                 return True
 
-            logger.info(f" Auto-dispatch enabled for {len(target_nodes)} nodes")
+            logger.info(f" Dispatching to {len(target_nodes)} nodes")
 
             scan_path = await self._download_scan(workspace_id, scan_id, subject_id, session_id)
 
@@ -123,30 +119,7 @@ class NewScanAvailableHandler:
             logger.error(f" Error handling scan.new_scan_available event: {e}", exc_info=True)
             return False
 
-    async def _is_auto_dispatch_enabled(self) -> bool:
-        """
-        Check if auto-dispatch is enabled for FlairStar results.
-
-        Returns:
-            bool: True if enabled
-        """
-        try:
-            from receiver.services.proxy_config_service import get_config_service
-
-            def _check():
-                config_service = get_config_service()
-                if not config_service:
-                    return False
-
-                return config_service.is_auto_dispatch_enabled()
-
-            return await sync_to_async(_check)()
-
-        except Exception as e:
-            logger.error(f"Error checking auto-dispatch config: {e}", exc_info=True)
-            return False
-
-    async def _get_auto_dispatch_nodes(self) -> list:
+    async def _get_dispatch_nodes(self) -> list:
         """
         Get nodes configured for auto-dispatch.
 

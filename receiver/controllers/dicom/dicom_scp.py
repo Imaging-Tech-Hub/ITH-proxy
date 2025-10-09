@@ -147,13 +147,7 @@ class DicomServiceProvider:
                 logger.error(f"Study not found in database: {study_uid}")
                 return
 
-            from receiver.services.proxy_config_service import get_config_service
-            config_service = get_config_service()
-
-            if not config_service or not config_service.is_auto_dispatch_enabled():
-                logger.info(f"Auto-dispatch disabled, skipping upload for study: {study_uid}")
-                return
-
+            # Archive and upload the study to backend
             self._archive_and_upload_study(study_uid, study, stats)
 
         finally:
@@ -222,10 +216,34 @@ class DicomServiceProvider:
                     archiver.cleanup_study_directory(study_path)
                     logger.info(f" Cleanup completed for study: {study_uid}")
                 else:
+                    logger.info(f"Keeping source DICOM files (CLEANUP_AFTER_UPLOAD=False)")
                     archiver.cleanup_archive(zip_path)
             else:
-                logger.error(f" Failed to upload study: {study_uid}")
-                logger.info(f"Archive kept for manual retry: {zip_path}")
+                logger.error(f" Failed to upload study after all retries: {study_uid}")
+
+                if uploader.cleanup_after_upload:
+                    logger.warning(f"Upload failed - cleaning up files and database records (CLEANUP_AFTER_UPLOAD=True)")
+
+                    # Delete archive file
+                    archiver.cleanup_archive(zip_path)
+
+                    # Delete database records (Session.delete() also removes storage_path and PHI if needed)
+                    try:
+                        if study:
+                            logger.info(f"Deleting database record for failed upload: {study_uid}")
+                            study.delete()  # This will also delete storage directory and orphaned PHI mappings
+                            logger.info(f"✅ Database cleanup completed for study: {study_uid}")
+                    except Exception as e:
+                        logger.error(f"Error deleting database record: {e}", exc_info=True)
+                        # If DB deletion fails, still try to clean up files
+                        archiver.cleanup_study_directory(study_path)
+
+                    logger.info(f" Cleanup completed for failed upload: {study_uid}")
+                else:
+                    logger.info(f"Upload failed - keeping files for manual retry (CLEANUP_AFTER_UPLOAD=False)")
+                    logger.info(f"Archive location: {zip_path}")
+                    logger.info(f"DICOM files location: {study_path}")
+                    logger.info(f"Database record preserved for retry")
 
         except Exception as e:
             logger.error(f"Error archiving/uploading study {study_uid}: {e}", exc_info=True)

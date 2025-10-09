@@ -159,7 +159,7 @@ class ScanDispatchHandler:
                             logger.warning(f"⚠️  Node {node.name} ({node.node_id}) is not reachable, skipping")
                             continue
 
-                        if node.permission.upper() not in ['WRITE_ONLY', 'READ_WRITE']:
+                        if node.permission.lower() not in ['write', 'read_write']:
                             logger.warning(f"⚠️  Node {node.name} ({node.node_id}) does not have WRITE permission (permission: {node.permission}), skipping")
                             continue
 
