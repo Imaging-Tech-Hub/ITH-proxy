@@ -233,7 +233,7 @@ class SubjectDispatchHandler(BaseEventHandler):
     async def _resolve_phi_in_directory(self, dicom_dir: Path, subject_id: str = None):
         """
         Resolve PHI in all DICOM files in a directory.
-        Uses local database for PHI resolution.
+        Uses local database for PHI resolution, same approach as C-GET handler.
 
         Args:
             dicom_dir: Directory containing DICOM files
@@ -258,11 +258,19 @@ class SubjectDispatchHandler(BaseEventHandler):
             for dcm_file in dcm_files:
                 try:
                     ds = dcmread(str(dcm_file))
+
                     ds = resolver.resolve_dataset(ds)
+
                     ds.save_as(str(dcm_file))
                     resolved_count += 1
+
+                    if resolved_count == 1:
+                        patient_name = getattr(ds, 'PatientName', 'Unknown')
+                        patient_id = getattr(ds, 'PatientID', 'Unknown')
+                        self.logger.info(f"✅ Resolved to: {patient_name} ({patient_id})")
+
                 except Exception as e:
-                    self.logger.warning(f"Failed to resolve PHI for {dcm_file.name}: {e}")
+                    self.logger.warning(f"Failed to resolve PHI for {dcm_file.name}: {e}", exc_info=True)
 
             self.logger.info(f"✅ Resolved PHI for {resolved_count}/{len(dcm_files)} files")
             return resolved_count
