@@ -115,6 +115,10 @@ class SubjectDispatchHandler(BaseEventHandler):
             extract_path = download_path.parent / f"{download_path.stem}_extracted"
             await self._extract_archive(download_path, extract_path)
 
+            # Resolve PHI in DICOM files before sending to nodes
+            self.logger.info(f"🔍 Resolving PHI for subject {subject_id}...")
+            await self._resolve_phi_in_directory(extract_path, subject_id)
+
             # Send to PACS nodes
             send_cmd = SendDICOMToMultipleNodesCommand(
                 nodes=nodes,
@@ -226,6 +230,45 @@ class SubjectDispatchHandler(BaseEventHandler):
 
         await self.send_response(status_event)
 
+    async def _resolve_phi_in_directory(self, dicom_dir: Path, subject_id: str = None):
+        """
+        Resolve PHI in all DICOM files in a directory.
+        Uses local database for PHI resolution.
+
+        Args:
+            dicom_dir: Directory containing DICOM files
+            subject_id: Optional subject ID for logging
+        """
+        from asgiref.sync import sync_to_async
+        from pydicom import dcmread
+
+        def _resolve():
+            from receiver.containers import container
+
+            resolver = container.phi_resolver()
+            dcm_files = list(dicom_dir.rglob('*.dcm'))
+
+            if not dcm_files:
+                self.logger.warning(f"No DICOM files found in {dicom_dir}")
+                return 0
+
+            self.logger.info(f"🔍 Resolving PHI for {len(dcm_files)} DICOM files...")
+
+            resolved_count = 0
+            for dcm_file in dcm_files:
+                try:
+                    ds = dcmread(str(dcm_file))
+                    ds = resolver.resolve_dataset(ds)
+                    ds.save_as(str(dcm_file))
+                    resolved_count += 1
+                except Exception as e:
+                    self.logger.warning(f"Failed to resolve PHI for {dcm_file.name}: {e}")
+
+            self.logger.info(f"✅ Resolved PHI for {resolved_count}/{len(dcm_files)} files")
+            return resolved_count
+
+        return await sync_to_async(_resolve, thread_sensitive=False)()
+
 
 class SessionDispatchHandler(SubjectDispatchHandler):
     """
@@ -315,6 +358,10 @@ class SessionDispatchHandler(SubjectDispatchHandler):
             download_path = Path(result.data['file_path'])
             extract_path = download_path.parent / f"{download_path.stem}_extracted"
             await self._extract_archive(download_path, extract_path)
+
+            # Resolve PHI in DICOM files before sending to nodes
+            self.logger.info(f"🔍 Resolving PHI for session {session_id}...")
+            await self._resolve_phi_in_directory(extract_path, subject_id)
 
             send_cmd = SendDICOMToMultipleNodesCommand(
                 nodes=nodes,
@@ -438,6 +485,10 @@ class ScanDispatchHandler(SubjectDispatchHandler):
             download_path = Path(result.data['file_path'])
             extract_path = download_path.parent / f"{download_path.stem}_extracted"
             await self._extract_archive(download_path, extract_path)
+
+            # Resolve PHI in DICOM files before sending to nodes
+            self.logger.info(f"🔍 Resolving PHI for scan {scan_id}...")
+            await self._resolve_phi_in_directory(extract_path, subject_id)
 
             send_cmd = SendDICOMToMultipleNodesCommand(
                 nodes=nodes,
