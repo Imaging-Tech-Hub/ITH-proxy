@@ -262,13 +262,19 @@ class GetHandler:
                 api_client = container.ith_api_client()
                 lock_manager = get_dispatch_lock_manager()
 
+                logger.info(f"Searching for study {study_uid} in API sessions...")
                 sessions_response = api_client.list_sessions()
                 sessions = sessions_response.get('sessions', [])
+                logger.info(f"Found {len(sessions)} sessions in API")
 
+                matched = False
                 for session in sessions:
-                    if session.get('study_instance_uid') == study_uid:
+                    session_study_uid = session.get('study_instance_uid')
+                    if session_study_uid == study_uid:
+                        matched = True
                         session_id = session.get('session_id')
                         subject_id = session.get('subject_id')
+                        logger.info(f"Matched session {session_id} with study UID {study_uid}")
 
                         if session_id and subject_id:
                             lock_key_node = 'api_download'
@@ -311,6 +317,10 @@ class GetHandler:
                                     lock_manager.release_lock(lock_key_node, 'c-get', study_uid)
 
                         break
+
+                if not matched:
+                    logger.warning(f"No session found in API with StudyInstanceUID: {study_uid}")
+                    logger.warning(f"Available study UIDs: {[s.get('study_instance_uid') for s in sessions[:5]]}")
 
             elif query_level == 'SERIES':
                 series_uid = self._extract_series_uid(identifier)
