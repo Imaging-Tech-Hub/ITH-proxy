@@ -87,7 +87,7 @@ class SessionDispatchHandler:
                 logger.error(" Failed to extract session archive")
                 return False
 
-            resolved_dir = await self._resolve_dicom_files(dicom_dir)
+            resolved_dir = await self._resolve_dicom_files(dicom_dir, subject_id=subject_id)
 
             if not resolved_dir:
                 logger.error(" Failed to resolve PHI in DICOM files")
@@ -224,20 +224,23 @@ class SessionDispatchHandler:
             logger.error(f"Error extracting session: {e}", exc_info=True)
             return None
 
-    async def _resolve_dicom_files(self, dicom_dir: Path) -> Path:
+    async def _resolve_dicom_files(self, dicom_dir: Path, subject_id: str = None) -> Path:
         """
         Resolve PHI in all DICOM files (de-anonymize).
+        Uses API to get PHI for files from backend.
 
         Args:
             dicom_dir: Directory containing anonymized DICOM files
+            subject_id: Backend subject ID for API resolution
 
         Returns:
             Path to directory with resolved files, or None if failed
         """
         try:
             def _resolve():
-                from receiver.controllers.phi_resolver import PHIResolver
-                resolver = PHIResolver()
+                from receiver.containers import container
+
+                resolver = container.phi_resolver()
 
                 dcm_files = list(dicom_dir.rglob('*.dcm'))
                 logger.info(f"🔍 Resolving PHI for {len(dcm_files)} DICOM files...")
@@ -246,12 +249,9 @@ class SessionDispatchHandler:
                 for dcm_file in dcm_files:
                     try:
                         ds = dcmread(str(dcm_file))
-
                         ds = resolver.resolve_dataset(ds)
-
                         ds.save_as(str(dcm_file))
                         resolved_count += 1
-
                     except Exception as e:
                         logger.warning(f"Failed to resolve {dcm_file.name}: {e}")
 
@@ -271,7 +271,7 @@ class SessionDispatchHandler:
         session_label: str
     ) -> bool:
         """
-        Send DICOM files to all specified nodes.
+        Send DICOM files to all specified nodes with duplicate dispatch prevention.
 
         Args:
             nodes: List of NodeConfig objects
@@ -283,27 +283,70 @@ class SessionDispatchHandler:
         """
         try:
             from receiver.commands.dicom_send_commands import SendDICOMToMultipleNodesCommand
+            from receiver.services.dispatch_lock_manager import get_dispatch_lock_manager
 
             def _send():
-                logger.info(f" Sending session '{session_label}' to {len(nodes)} nodes...")
+                lock_manager = get_dispatch_lock_manager()
 
-                cmd = SendDICOMToMultipleNodesCommand(
-                    nodes=nodes,
-                    directory=dicom_dir,
-                    recursive=True,
-                    ae_title='DICOM_PROXY'
-                )
+                # Get study UID from first DICOM file
+                study_uid = 'unknown'
+                dcm_files = list(dicom_dir.rglob('*.dcm'))
+                if dcm_files:
+                    try:
+                        ds = dcmread(str(dcm_files[0]))
+                        study_uid = getattr(ds, 'StudyInstanceUID', 'unknown')
+                    except Exception as e:
+                        logger.warning(f"Could not read StudyInstanceUID from DICOM: {e}")
 
-                result = cmd.execute()
+                # Filter nodes - only send to nodes that we can acquire lock for
+                nodes_to_send = []
+                skipped_nodes = []
 
-                if result.success:
-                    logger.info(f" Successfully sent to {result.metadata.get('successful_nodes', 0)} nodes")
-                    logger.info(f"Files sent: {result.metadata.get('total_files_sent', 0)}")
-                    logger.info(f"Files failed: {result.metadata.get('total_files_failed', 0)}")
-                    return True
-                else:
-                    logger.error(f" Failed to send to nodes: {result.error}")
+                for node in nodes:
+                    if lock_manager.acquire_lock(node.node_id, 'session', study_uid):
+                        nodes_to_send.append(node)
+                    else:
+                        skipped_nodes.append(node)
+                        logger.warning(
+                            f"🔒 Skipping {node.name}: dispatch already in progress for "
+                            f"study {study_uid}"
+                        )
+
+                if not nodes_to_send:
+                    logger.warning("⚠️  All nodes are already processing this dispatch, skipping")
                     return False
+
+                if skipped_nodes:
+                    logger.info(
+                        f"ℹ️  Skipped {len(skipped_nodes)} node(s) due to in-progress dispatch, "
+                        f"sending to {len(nodes_to_send)} node(s)"
+                    )
+
+                try:
+                    logger.info(f" Sending session '{session_label}' to {len(nodes_to_send)} nodes...")
+                    logger.info(f"StudyInstanceUID: {study_uid}")
+
+                    cmd = SendDICOMToMultipleNodesCommand(
+                        nodes=nodes_to_send,
+                        directory=dicom_dir,
+                        recursive=True,
+                        ae_title='DICOM_PROXY'
+                    )
+
+                    result = cmd.execute()
+
+                    if result.success:
+                        logger.info(f" Successfully sent to {result.metadata.get('successful_nodes', 0)} nodes")
+                        logger.info(f"Files sent: {result.metadata.get('total_files_sent', 0)}")
+                        logger.info(f"Files failed: {result.metadata.get('total_files_failed', 0)}")
+                        return True
+                    else:
+                        logger.error(f" Failed to send to nodes: {result.error}")
+                        return False
+
+                finally:
+                    for node in nodes_to_send:
+                        lock_manager.release_lock(node.node_id, 'session', study_uid)
 
             return await sync_to_async(_send)()
 

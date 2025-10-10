@@ -132,13 +132,34 @@ class ProxyConsumer(AsyncWebsocketConsumer):
         """
         try:
             event = json.loads(text_data)
+
+            # Try to get event_type from top level first
             event_type = event.get('event_type')
 
+            # If not found, check if it's nested in payload (backend compatibility)
+            if not event_type and 'payload' in event:
+                payload = event.get('payload', {})
+                event_type = payload.get('event_type')
+
+                # If found in nested payload, flatten the structure
+                if event_type:
+                    logger.debug(f"Event type found in nested payload, flattening structure")
+                    # Create flattened event structure
+                    event = {
+                        'event_type': event_type,
+                        'workspace_id': payload.get('workspace_id', event.get('workspace_id')),
+                        'timestamp': payload.get('timestamp', event.get('timestamp')),
+                        'correlation_id': payload.get('correlation_id', event.get('correlation_id')),
+                        'entity_type': payload.get('entity_type', event.get('entity_type')),
+                        'entity_id': payload.get('entity_id', event.get('entity_id')),
+                        'payload': payload.get('payload', {})
+                    }
+
             if not event_type:
-                logger.warning(f"Received event without event_type: {event}")
+                logger.warning(f"Received event without event_type: {json.dumps(event)[:200]}")
                 return
 
-            logger.debug(f"Received event: {event_type} from {self.proxy_key}")
+            logger.info(f"📨 Received event: {event_type}")
 
             handler = self.handlers.get(event_type)
 

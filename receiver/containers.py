@@ -18,6 +18,12 @@ class Container(containers.DeclarativeContainer):
         'receiver.controllers.phi_anonymizer.PHIAnonymizer'
     )
 
+    ith_api_client = providers.Singleton(
+        'receiver.services.ith_api_client.IthAPIClient',
+        base_url=config.ith_url,
+        proxy_key=config.ith_token
+    )
+
     phi_resolver = providers.Singleton(
         'receiver.controllers.phi_resolver.PHIResolver'
     )
@@ -32,12 +38,6 @@ class Container(containers.DeclarativeContainer):
         timeout=config.study_timeout
     )
 
-    ith_api_client = providers.Singleton(
-        'receiver.services.ith_api_client.IthAPIClient',
-        base_url=config.ith_url,
-        proxy_key=config.ith_token
-    )
-
     proxy_config_service = providers.Singleton(
         'receiver.services.proxy_config_service.ProxyConfigService',
         api_client=ith_api_client
@@ -47,6 +47,10 @@ class Container(containers.DeclarativeContainer):
         'receiver.services.api_query_service.APIQueryService',
         api_client=ith_api_client,
         resolver=phi_resolver
+    )
+
+    dispatch_lock_manager = providers.Singleton(
+        'receiver.services.dispatch_lock_manager.DispatchLockManager'
     )
 
     patient_query_handler = providers.Singleton(

@@ -83,7 +83,7 @@ class ProxyWebSocketClient:
             self.websocket = await websockets.connect(
                 self.ws_url,
                 ping_interval=30,
-                ping_timeout=10
+                ping_timeout=30
             )
 
             try:
@@ -284,8 +284,16 @@ class ProxyWebSocketClient:
         while self.running and self.websocket:
             try:
                 logger.debug("Checking node health status...")
-                nodes = await self._get_node_health_status()
-                logger.debug(f"Node health check returned {len(nodes)} nodes: {nodes}")
+
+                try:
+                    nodes = await asyncio.wait_for(
+                        self._get_node_health_status(),
+                        timeout=20.0
+                    )
+                    logger.debug(f"Node health check returned {len(nodes)} nodes: {nodes}")
+                except asyncio.TimeoutError:
+                    logger.warning("Node health check timed out, sending update without node status")
+                    nodes = []
 
                 await self.send_health_update(
                     proxy_status="online",
@@ -363,7 +371,7 @@ class ProxyWebSocketClient:
         """
         from asgiref.sync import sync_to_async
 
-        return await sync_to_async(self._check_node_health_sync)()
+        return await sync_to_async(self._check_node_health_sync, thread_sensitive=False)()
 
     async def _handle_incoming_messages(self):
         """Handle incoming messages from backend."""
@@ -389,6 +397,23 @@ class ProxyWebSocketClient:
                 message_type = data.get('type')
                 event_type = data.get('event_type')
 
+                # Check if event_type is nested in payload (backend sends it this way)
+                if not event_type and 'payload' in data:
+                    nested_payload = data.get('payload', {})
+                    event_type = nested_payload.get('event_type')
+                    if event_type:
+                        # Flatten the structure for handlers
+                        logger.debug(f"Event type found in nested payload: {event_type}")
+                        data = {
+                            'event_type': event_type,
+                            'workspace_id': nested_payload.get('workspace_id', data.get('workspace_id')),
+                            'timestamp': nested_payload.get('timestamp', data.get('timestamp')),
+                            'correlation_id': nested_payload.get('correlation_id'),
+                            'entity_type': nested_payload.get('entity_type'),
+                            'entity_id': nested_payload.get('entity_id'),
+                            'payload': nested_payload.get('payload', {})
+                        }
+
                 if message_type == 'ping':
                     logger.debug("Received ping from server")
 
@@ -405,11 +430,12 @@ class ProxyWebSocketClient:
                         logger.warning(f"Config update error: {data.get('error')}")
 
                 elif event_type:
-                    logger.info(f"Received event: {event_type}")
+                    logger.info(f"📨 Received event: {event_type}")
                     await self._handle_event(event_type, data)
 
                 else:
                     logger.debug(f"Received unhandled message type: {message_type}")
+                    logger.debug(f"Message data: {json.dumps(data)[:500]}")
 
             except websockets.exceptions.ConnectionClosed as e:
                 logger.warning(f"WebSocket connection closed: {e}")
@@ -488,7 +514,8 @@ class ProxyWebSocketClient:
             hostname = socket.gethostname()
             try:
                 ip_address = socket.gethostbyname(hostname)
-            except:
+            except (socket.gaierror, OSError) as e:
+                logger.warning(f"Could not resolve hostname {hostname}: {e}")
                 ip_address = '127.0.0.1'
 
             proxy_version = getattr(settings, 'PROXY_VERSION', '1.0.0')

@@ -84,7 +84,7 @@ class SubjectDispatchHandler:
                 logger.error(" Failed to extract subject archive")
                 return False
 
-            resolved_dir = await self._resolve_dicom_files(dicom_dir)
+            resolved_dir = await self._resolve_dicom_files(dicom_dir, subject_id=subject_id)
 
             if not resolved_dir:
                 logger.error(" Failed to resolve PHI in DICOM files")
@@ -218,20 +218,23 @@ class SubjectDispatchHandler:
             logger.error(f"Error extracting subject: {e}", exc_info=True)
             return None
 
-    async def _resolve_dicom_files(self, dicom_dir: Path) -> Path:
+    async def _resolve_dicom_files(self, dicom_dir: Path, subject_id: str = None) -> Path:
         """
         Resolve PHI in all DICOM files (de-anonymize).
+        Uses API to get PHI for files from backend.
 
         Args:
             dicom_dir: Directory containing anonymized DICOM files
+            subject_id: Backend subject ID for API resolution
 
         Returns:
             Path to directory with resolved files, or None if failed
         """
         try:
             def _resolve():
-                from receiver.controllers.phi_resolver import PHIResolver
-                resolver = PHIResolver()
+                from receiver.containers import container
+
+                resolver = container.phi_resolver()
 
                 dcm_files = list(dicom_dir.rglob('*.dcm'))
                 logger.info(f"🔍 Resolving PHI for {len(dcm_files)} DICOM files...")
@@ -240,12 +243,9 @@ class SubjectDispatchHandler:
                 for dcm_file in dcm_files:
                     try:
                         ds = dcmread(str(dcm_file))
-
                         ds = resolver.resolve_dataset(ds)
-
                         ds.save_as(str(dcm_file))
                         resolved_count += 1
-
                     except Exception as e:
                         logger.warning(f"Failed to resolve {dcm_file.name}: {e}")
 
@@ -265,7 +265,7 @@ class SubjectDispatchHandler:
         subject_identifier: str
     ) -> bool:
         """
-        Send DICOM files to all specified nodes.
+        Send DICOM files to all specified nodes with duplicate dispatch prevention.
 
         Args:
             nodes: List of NodeConfig objects
@@ -277,27 +277,86 @@ class SubjectDispatchHandler:
         """
         try:
             from receiver.commands.dicom_send_commands import SendDICOMToMultipleNodesCommand
+            from receiver.services.dispatch_lock_manager import get_dispatch_lock_manager
 
             def _send():
-                logger.info(f" Sending subject '{subject_identifier}' to {len(nodes)} nodes...")
+                lock_manager = get_dispatch_lock_manager()
 
-                cmd = SendDICOMToMultipleNodesCommand(
-                    nodes=nodes,
-                    directory=dicom_dir,
-                    recursive=True,
-                    ae_title='DICOM_PROXY'
-                )
+                study_uids = set()
+                dcm_files = list(dicom_dir.rglob('*.dcm'))
+                for dcm_file in dcm_files[:10]:
+                    try:
+                        ds = dcmread(str(dcm_file))
+                        study_uid = getattr(ds, 'StudyInstanceUID', None)
+                        if study_uid:
+                            study_uids.add(study_uid)
+                    except Exception:
+                        pass
 
-                result = cmd.execute()
+                if not study_uids:
+                    study_uids = {'unknown'}
 
-                if result.success:
-                    logger.info(f" Successfully sent to {result.metadata.get('successful_nodes', 0)} nodes")
-                    logger.info(f"Files sent: {result.metadata.get('total_files_sent', 0)}")
-                    logger.info(f"Files failed: {result.metadata.get('total_files_failed', 0)}")
-                    return True
-                else:
-                    logger.error(f" Failed to send to nodes: {result.error}")
+                nodes_to_send = []
+                skipped_nodes = []
+
+                for node in nodes:
+                    can_send = True
+                    acquired_locks = []
+
+                    for study_uid in study_uids:
+                        if lock_manager.acquire_lock(node.node_id, 'subject', study_uid):
+                            acquired_locks.append(study_uid)
+                        else:
+                            can_send = False
+                            logger.warning(
+                                f"🔒 Skipping {node.name}: dispatch already in progress for "
+                                f"study {study_uid}"
+                            )
+                            for acquired in acquired_locks:
+                                lock_manager.release_lock(node.node_id, 'subject', acquired)
+                            break
+
+                    if can_send:
+                        nodes_to_send.append((node, list(study_uids)))
+                    else:
+                        skipped_nodes.append(node)
+
+                if not nodes_to_send:
+                    logger.warning("⚠️  All nodes are already processing this dispatch, skipping")
                     return False
+
+                if skipped_nodes:
+                    logger.info(
+                        f"Skipped {len(skipped_nodes)} node(s) due to in-progress dispatch, "
+                        f"sending to {len(nodes_to_send)} node(s)"
+                    )
+
+                try:
+                    logger.info(f" Sending subject '{subject_identifier}' to {len(nodes_to_send)} nodes...")
+                    logger.info(f"Studies: {', '.join(study_uids)}")
+
+                    cmd = SendDICOMToMultipleNodesCommand(
+                        nodes=[n[0] for n in nodes_to_send],
+                        directory=dicom_dir,
+                        recursive=True,
+                        ae_title='DICOM_PROXY'
+                    )
+
+                    result = cmd.execute()
+
+                    if result.success:
+                        logger.info(f" Successfully sent to {result.metadata.get('successful_nodes', 0)} nodes")
+                        logger.info(f"Files sent: {result.metadata.get('total_files_sent', 0)}")
+                        logger.info(f"Files failed: {result.metadata.get('total_files_failed', 0)}")
+                        return True
+                    else:
+                        logger.error(f" Failed to send to nodes: {result.error}")
+                        return False
+
+                finally:
+                    for node, study_uids_for_node in nodes_to_send:
+                        for study_uid in study_uids_for_node:
+                            lock_manager.release_lock(node.node_id, 'subject', study_uid)
 
             return await sync_to_async(_send)()
 

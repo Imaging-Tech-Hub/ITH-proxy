@@ -28,17 +28,20 @@ class ColoredFormatter(logging.Formatter):
     BOLD = '\033[1m'
 
     def format(self, record):
-        levelname = record.levelname
-        if levelname in self.COLORS:
+        levelname_orig = record.levelname
+
+        if levelname_orig in self.COLORS:
             record.levelname = (
-                f"{self.COLORS[levelname]}{self.BOLD}{self.ICONS[levelname]} "
-                f"{levelname}{self.RESET}"
+                f"{self.COLORS[levelname_orig]}{self.BOLD}{self.ICONS[levelname_orig]} "
+                f"{levelname_orig}{self.RESET}"
             )
 
         try:
             result = super().format(record)
         except (TypeError, ValueError) as e:
             result = f"{record.levelname} [{record.name}] {record.msg}"
+        finally:
+            record.levelname = levelname_orig
 
         return result
 

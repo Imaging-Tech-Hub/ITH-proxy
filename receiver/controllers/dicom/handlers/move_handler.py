@@ -61,18 +61,19 @@ class MoveHandler:
             Destination address, dataset count, datasets, or status codes
         """
         try:
-            from receiver.services.access_control_service import extract_calling_ae_title, get_access_control_service
+            from receiver.services.access_control_service import extract_calling_ae_title, extract_requester_address, get_access_control_service
             calling_ae = extract_calling_ae_title(event)
+            requester_ip = extract_requester_address(event)
 
             access_control = get_access_control_service()
 
             if access_control:
-                allowed, reason = access_control.can_accept_retrieve(calling_ae, "C-MOVE")
+                allowed, reason = access_control.can_accept_retrieve(calling_ae, requester_ip, "C-MOVE")
                 if not allowed:
-                    logger.warning(f"C-MOVE REJECTED from {calling_ae}: {reason}")
+                    logger.warning(f"C-MOVE REJECTED from {calling_ae} ({requester_ip or 'unknown IP'}): {reason}")
                     yield 0xC001
                     return
-                logger.debug(f"C-MOVE access granted to {calling_ae}: {reason}")
+                logger.debug(f"C-MOVE access granted to {calling_ae} ({requester_ip or 'unknown IP'}): {reason}")
 
             request = event.request
 
@@ -250,7 +251,7 @@ class MoveHandler:
         identifier: Any
     ) -> List[Any]:
         """
-        Download datasets from ITH API.
+        Download datasets from ITH API with duplicate download prevention.
 
         Args:
             query_level: Query level
@@ -263,10 +264,13 @@ class MoveHandler:
         datasets = []
 
         try:
- 
+
             if query_level == 'STUDY' and study_uid:
                 from receiver.containers import container
+                from receiver.services.dispatch_lock_manager import get_dispatch_lock_manager
+
                 api_client = container.ith_api_client()
+                lock_manager = get_dispatch_lock_manager()
 
                 sessions_response = api_client.list_sessions()
                 sessions = sessions_response.get('sessions', [])
@@ -278,28 +282,41 @@ class MoveHandler:
                         subject_id = session.get('subject_id')
 
                         if session_id and subject_id:
-                            import tempfile
-                            with tempfile.TemporaryDirectory() as temp_dir:
-                                temp_path = Path(temp_dir) / f"{session_id}.zip"
+                            lock_key_node = 'api_download'
+                            lock_acquired = lock_manager.acquire_lock(lock_key_node, 'c-move', study_uid)
 
-                                logger.info(f" Downloading session {session_id} from API...")
-                                api_client.download_session(
-                                    session_id=session_id,
-                                    subject_id=subject_id,
-                                    output_path=temp_path
-                                )
+                            if not lock_acquired:
+                                logger.warning(f"🔒 Download already in progress for study {study_uid}, waiting...")
+                                import time
+                                time.sleep(0.5)
 
-                                import zipfile
-                                extract_dir = Path(temp_dir) / "extracted"
-                                with zipfile.ZipFile(temp_path, 'r') as zip_ref:
-                                    zip_ref.extractall(extract_dir)
+                            try:
+                                import tempfile
+                                with tempfile.TemporaryDirectory() as temp_dir:
+                                    temp_path = Path(temp_dir) / f"{session_id}.zip"
 
-                                for dcm_file in extract_dir.rglob('*.dcm'):
-                                    try:
-                                        ds = dcmread(str(dcm_file))
-                                        datasets.append(ds)
-                                    except Exception as e:
-                                        logger.warning(f"Error reading {dcm_file}: {e}")
+                                    logger.info(f" Downloading session {session_id} from API...")
+                                    api_client.download_session(
+                                        session_id=session_id,
+                                        subject_id=subject_id,
+                                        output_path=temp_path
+                                    )
+
+                                    import zipfile
+                                    extract_dir = Path(temp_dir) / "extracted"
+                                    with zipfile.ZipFile(temp_path, 'r') as zip_ref:
+                                        zip_ref.extractall(extract_dir)
+
+                                    for dcm_file in extract_dir.rglob('*.dcm'):
+                                        try:
+                                            ds = dcmread(str(dcm_file))
+                                            datasets.append(ds)
+                                        except Exception as e:
+                                            logger.warning(f"Error reading {dcm_file}: {e}")
+
+                            finally:
+                                if lock_acquired:
+                                    lock_manager.release_lock(lock_key_node, 'c-move', study_uid)
 
                         break
 

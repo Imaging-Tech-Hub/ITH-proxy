@@ -186,6 +186,7 @@ class APIQueryService:
                         logger.info(f"   Scan #{scan_idx}:")
                         logger.info(f"     - ID: {scan.get('id')}")
                         logger.info(f"     - Type: {scan.get('type')}")
+                        logger.info(f"     - Series UID: {scan.get('series_instance_uid', 'MISSING')}")
                         logger.info(f"     - Instance count: {scan.get('instance_count', 0)}")
 
                 except Exception as e:
@@ -347,7 +348,8 @@ class APIQueryService:
             logger.info(f"Found {len(scans)} series from API")
 
             series_list = []
-            for scan in scans:
+            logger.info(f"\n📊 Building series list from {len(scans)} scans...")
+            for idx, scan in enumerate(scans, 1):
                 series_info = {
                     'PatientID': patient_id,
                     'PatientName': patient_name,
@@ -359,7 +361,15 @@ class APIQueryService:
                     'NumberOfSeriesRelatedInstances': scan.get('instance_count', 0),
                 }
 
+                logger.info(f"   Series #{idx}:")
+                logger.info(f"     - SeriesInstanceUID: {series_info['SeriesInstanceUID']}")
+                logger.info(f"     - SeriesNumber: {series_info['SeriesNumber']}")
+                logger.info(f"     - SeriesDescription: {series_info['SeriesDescription']}")
+                logger.info(f"     - Modality: {series_info['Modality']}")
+
                 series_list.append(series_info)
+
+            logger.info(f"\n✅ Built {len(series_list)} series from API")
 
             return series_list
 

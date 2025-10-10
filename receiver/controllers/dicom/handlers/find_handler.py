@@ -39,18 +39,19 @@ class FindHandler:
         Yields:
             tuple: (status_code, response_dataset)
         """
-        from receiver.services.access_control_service import extract_calling_ae_title, get_access_control_service
+        from receiver.services.access_control_service import extract_calling_ae_title, extract_requester_address, get_access_control_service
         calling_ae = extract_calling_ae_title(event)
+        requester_ip = extract_requester_address(event)
 
         access_control = get_access_control_service()
 
         if access_control:
-            allowed, reason = access_control.can_accept_query(calling_ae)
+            allowed, reason = access_control.can_accept_query(calling_ae, requester_ip)
             if not allowed:
-                logger.warning(f"C-FIND REJECTED from {calling_ae}: {reason}")
+                logger.warning(f"C-FIND REJECTED from {calling_ae} ({requester_ip or 'unknown IP'}): {reason}")
                 yield 0xC001, None
                 return
-            logger.debug(f"C-FIND access granted to {calling_ae}: {reason}")
+            logger.debug(f"C-FIND access granted to {calling_ae} ({requester_ip or 'unknown IP'}): {reason}")
 
         logger.info("=" * 60)
         logger.info(" RECEIVED C-FIND REQUEST")

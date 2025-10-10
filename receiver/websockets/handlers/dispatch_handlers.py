@@ -145,9 +145,7 @@ class SubjectDispatchHandler(BaseEventHandler):
 
     async def _get_matching_nodes(self, requested_node_ids: List[str]) -> List[NodeConfig]:
         """Get nodes managed by this proxy that match requested nodes."""
-        # TODO: Load node configuration for this proxy
-        # This should be loaded from config file or API
-        # For now, return empty list
+        # Load nodes from ProxyConfigService (loaded from backend API)
         managed_nodes = await self._load_managed_nodes()
 
         managed_node_ids = {node.node_id for node in managed_nodes}

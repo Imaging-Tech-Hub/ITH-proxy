@@ -66,18 +66,19 @@ class GetHandler:
             Dataset count, datasets with status codes
         """
         try:
-            from receiver.services.access_control_service import extract_calling_ae_title, get_access_control_service
+            from receiver.services.access_control_service import extract_calling_ae_title, extract_requester_address, get_access_control_service
             calling_ae = extract_calling_ae_title(event)
+            requester_ip = extract_requester_address(event)
 
             access_control = get_access_control_service()
 
             if access_control:
-                allowed, reason = access_control.can_accept_retrieve(calling_ae, "C-GET")
+                allowed, reason = access_control.can_accept_retrieve(calling_ae, requester_ip, "C-GET")
                 if not allowed:
-                    logger.warning(f"C-GET REJECTED from {calling_ae}: {reason}")
+                    logger.warning(f"C-GET REJECTED from {calling_ae} ({requester_ip or 'unknown IP'}): {reason}")
                     yield 0xC001
                     return
-                logger.debug(f"C-GET access granted to {calling_ae}: {reason}")
+                logger.debug(f"C-GET access granted to {calling_ae} ({requester_ip or 'unknown IP'}): {reason}")
 
             request = event.request
 
@@ -256,7 +257,10 @@ class GetHandler:
         try:
             if query_level == 'STUDY' and study_uid:
                 from receiver.containers import container
+                from receiver.services.dispatch_lock_manager import get_dispatch_lock_manager
+
                 api_client = container.ith_api_client()
+                lock_manager = get_dispatch_lock_manager()
 
                 sessions_response = api_client.list_sessions()
                 sessions = sessions_response.get('sessions', [])
@@ -267,31 +271,44 @@ class GetHandler:
                         subject_id = session.get('subject_id')
 
                         if session_id and subject_id:
-                            with tempfile.TemporaryDirectory() as temp_dir:
-                                temp_path = Path(temp_dir) / f"{session_id}.zip"
+                            lock_key_node = 'api_download'
+                            lock_acquired = lock_manager.acquire_lock(lock_key_node, 'c-get', study_uid)
 
-                                logger.info(f"Downloading session {session_id} from API...")
-                                api_client.download_session(
-                                    session_id=session_id,
-                                    subject_id=subject_id,
-                                    output_path=temp_path
-                                )
+                            if not lock_acquired:
+                                logger.warning(f"🔒 Download already in progress for study {study_uid}, waiting...")
+                                import time
+                                time.sleep(0.5)
 
-                                extract_dir = Path(temp_dir) / "extracted"
-                                with zipfile.ZipFile(temp_path, 'r') as zip_ref:
-                                    zip_ref.extractall(extract_dir)
+                            try:
+                                with tempfile.TemporaryDirectory() as temp_dir:
+                                    temp_path = Path(temp_dir) / f"{session_id}.zip"
 
-                                for dcm_file in extract_dir.rglob('*.dcm'):
-                                    try:
-                                        ds = dcmread(str(dcm_file))
+                                    logger.info(f"Downloading session {session_id} from API...")
+                                    api_client.download_session(
+                                        session_id=session_id,
+                                        subject_id=subject_id,
+                                        output_path=temp_path
+                                    )
 
-                                        ds = self.resolver.resolve_dataset(ds)
+                                    extract_dir = Path(temp_dir) / "extracted"
+                                    with zipfile.ZipFile(temp_path, 'r') as zip_ref:
+                                        zip_ref.extractall(extract_dir)
 
-                                        self._prepare_dataset(ds, transfer_syntax)
+                                    for dcm_file in extract_dir.rglob('*.dcm'):
+                                        try:
+                                            ds = dcmread(str(dcm_file))
 
-                                        datasets.append(ds)
-                                    except Exception as e:
-                                        logger.warning(f"Error reading {dcm_file}: {e}")
+                                            ds = self.resolver.resolve_dataset(ds)
+
+                                            self._prepare_dataset(ds, transfer_syntax)
+
+                                            datasets.append(ds)
+                                        except Exception as e:
+                                            logger.warning(f"Error reading {dcm_file}: {e}")
+
+                            finally:
+                                if lock_acquired:
+                                    lock_manager.release_lock(lock_key_node, 'c-get', study_uid)
 
                         break
 
@@ -356,40 +373,55 @@ class GetHandler:
                     scan_id = matching_scan.get('id')
                     logger.info(f"Found matching scan: {scan_id}")
 
-                    with tempfile.TemporaryDirectory() as temp_dir:
-                        temp_path = Path(temp_dir) / f"{scan_id}.zip"
+                    from receiver.services.dispatch_lock_manager import get_dispatch_lock_manager
+                    lock_manager = get_dispatch_lock_manager()
+                    lock_key_node = 'api_download'
+                    lock_acquired = lock_manager.acquire_lock(lock_key_node, 'c-get-series', series_uid)
 
-                        logger.info(f"Downloading scan {scan_id} for series {series_uid}...")
-                        api_client.download_scan(
-                            scan_id=scan_id,
-                            subject_id=subject_id,
-                            session_id=session_id,
-                            output_path=temp_path
-                        )
+                    if not lock_acquired:
+                        logger.warning(f"🔒 Download already in progress for series {series_uid}, waiting...")
+                        import time
+                        time.sleep(0.5)
 
-                        extract_dir = Path(temp_dir) / "extracted"
-                        logger.debug(f"Extracting ZIP file...")
-                        with zipfile.ZipFile(temp_path, 'r') as zip_ref:
-                            zip_ref.extractall(extract_dir)
+                    try:
+                        with tempfile.TemporaryDirectory() as temp_dir:
+                            temp_path = Path(temp_dir) / f"{scan_id}.zip"
 
-                        dcm_files = list(extract_dir.rglob('*.dcm'))
-                        logger.info(f"Found {len(dcm_files)} DICOM files in scan")
+                            logger.info(f"Downloading scan {scan_id} for series {series_uid}...")
+                            api_client.download_scan(
+                                scan_id=scan_id,
+                                subject_id=subject_id,
+                                session_id=session_id,
+                                output_path=temp_path
+                            )
 
-                        if not dcm_files:
-                            all_files = list(extract_dir.rglob('*'))
-                            logger.warning(f"No .dcm files found in archive. Files present: {[f.name for f in all_files[:10]]}")
+                            extract_dir = Path(temp_dir) / "extracted"
+                            logger.debug(f"Extracting ZIP file...")
+                            with zipfile.ZipFile(temp_path, 'r') as zip_ref:
+                                zip_ref.extractall(extract_dir)
 
-                        for dcm_file in dcm_files:
-                            try:
-                                ds = dcmread(str(dcm_file))
-                                ds = self.resolver.resolve_dataset(ds)
-                                self._prepare_dataset(ds, transfer_syntax)
-                                datasets.append(ds)
-                                logger.debug(f"Loaded instance: {dcm_file.name}")
-                            except Exception as e:
-                                logger.error(f"Error reading {dcm_file}: {e}", exc_info=True)
+                            dcm_files = list(extract_dir.rglob('*.dcm'))
+                            logger.info(f"Found {len(dcm_files)} DICOM files in scan")
 
-                        logger.info(f"Successfully loaded {len(datasets)} DICOM instances from scan")
+                            if not dcm_files:
+                                all_files = list(extract_dir.rglob('*'))
+                                logger.warning(f"No .dcm files found in archive. Files present: {[f.name for f in all_files[:10]]}")
+
+                            for dcm_file in dcm_files:
+                                try:
+                                    ds = dcmread(str(dcm_file))
+                                    ds = self.resolver.resolve_dataset(ds)
+                                    self._prepare_dataset(ds, transfer_syntax)
+                                    datasets.append(ds)
+                                    logger.debug(f"Loaded instance: {dcm_file.name}")
+                                except Exception as e:
+                                    logger.error(f"Error reading {dcm_file}: {e}", exc_info=True)
+
+                            logger.info(f"Successfully loaded {len(datasets)} DICOM instances from scan")
+
+                    finally:
+                        if lock_acquired:
+                            lock_manager.release_lock(lock_key_node, 'c-get-series', series_uid)
 
                     break
 
@@ -421,31 +453,46 @@ class GetHandler:
                     subject_id = session.get('subject_id')
 
                     if session_id and subject_id:
-                        with tempfile.TemporaryDirectory() as temp_dir:
-                            temp_path = Path(temp_dir) / f"{session_id}.zip"
+                        from receiver.services.dispatch_lock_manager import get_dispatch_lock_manager
+                        lock_manager = get_dispatch_lock_manager()
+                        lock_key_node = 'api_download'
+                        lock_acquired = lock_manager.acquire_lock(lock_key_node, 'c-get-image', sop_uid)
 
-                            logger.info(f"Downloading session {session_id} for image {sop_uid}...")
-                            api_client.download_session(
-                                session_id=session_id,
-                                subject_id=subject_id,
-                                output_path=temp_path
-                            )
+                        if not lock_acquired:
+                            logger.warning(f"🔒 Download already in progress for image {sop_uid}, waiting...")
+                            import time
+                            time.sleep(0.5)
 
-                            extract_dir = Path(temp_dir) / "extracted"
-                            with zipfile.ZipFile(temp_path, 'r') as zip_ref:
-                                zip_ref.extractall(extract_dir)
+                        try:
+                            with tempfile.TemporaryDirectory() as temp_dir:
+                                temp_path = Path(temp_dir) / f"{session_id}.zip"
 
-                            for dcm_file in extract_dir.rglob('*.dcm'):
-                                try:
-                                    ds = dcmread(str(dcm_file))
-                                    if (getattr(ds, 'SeriesInstanceUID', None) == series_uid and
-                                        getattr(ds, 'SOPInstanceUID', None) == sop_uid):
-                                        ds = self.resolver.resolve_dataset(ds)
-                                        self._prepare_dataset(ds, transfer_syntax)
-                                        datasets.append(ds)
-                                        break 
-                                except Exception as e:
-                                    logger.warning(f"Error reading {dcm_file}: {e}")
+                                logger.info(f"Downloading session {session_id} for image {sop_uid}...")
+                                api_client.download_session(
+                                    session_id=session_id,
+                                    subject_id=subject_id,
+                                    output_path=temp_path
+                                )
+
+                                extract_dir = Path(temp_dir) / "extracted"
+                                with zipfile.ZipFile(temp_path, 'r') as zip_ref:
+                                    zip_ref.extractall(extract_dir)
+
+                                for dcm_file in extract_dir.rglob('*.dcm'):
+                                    try:
+                                        ds = dcmread(str(dcm_file))
+                                        if (getattr(ds, 'SeriesInstanceUID', None) == series_uid and
+                                            getattr(ds, 'SOPInstanceUID', None) == sop_uid):
+                                            ds = self.resolver.resolve_dataset(ds)
+                                            self._prepare_dataset(ds, transfer_syntax)
+                                            datasets.append(ds)
+                                            break
+                                    except Exception as e:
+                                        logger.warning(f"Error reading {dcm_file}: {e}")
+
+                        finally:
+                            if lock_acquired:
+                                lock_manager.release_lock(lock_key_node, 'c-get-image', sop_uid)
 
                     break
 

@@ -2,29 +2,41 @@
 PHI Resolver Module
 Handles de-anonymization of patient data for authorized access.
 Thread-safe operations for concurrent queries.
+Uses local database (PatientMapping) for resolution.
 """
 import threading
+import logging
 from typing import Dict, Optional, List, Any
 from pydicom import Dataset
 from receiver.models import PatientMapping
+
+logger = logging.getLogger(__name__)
 
 
 class PHIResolver:
     """
     Resolves (de-anonymizes) patient health information.
     Restores original patient data from anonymous identifiers.
+
+    Resolution source:
+    - Local database (PatientMapping) - for data received by this proxy
     """
 
     def __init__(self) -> None:
+        """
+        Initialize PHI Resolver.
+        """
         self._lock: threading.Lock = threading.Lock()
 
-    def resolve_patient(self, anonymous_name: Optional[str] = None, anonymous_id: Optional[str] = None) -> Optional[Dict[str, str]]:
+    def resolve_patient(self, anonymous_name: Optional[str] = None, anonymous_id: Optional[str] = None, subject_id: Optional[str] = None) -> Optional[Dict[str, str]]:
         """
         Resolve anonymous patient identifiers to original data.
+        Uses local database (PatientMapping) only.
 
         Args:
-            anonymous_name: Anonymous patient name (e.g., "ANON-00001")
+            anonymous_name: Anonymous patient name (e.g., "ANON-00001" or subject label)
             anonymous_id: Anonymous patient ID (e.g., "ANON-00001")
+            subject_id: Backend subject ID (unused - kept for compatibility)
 
         Returns:
             Dict containing original patient information, or None if not found
@@ -32,6 +44,7 @@ class PHIResolver:
         with self._lock:
             mapping = None
 
+            # Query local database
             if anonymous_name:
                 mapping = PatientMapping.objects.filter(
                     anonymous_patient_name=anonymous_name
@@ -49,7 +62,7 @@ class PHIResolver:
                     'anonymous_id': mapping.anonymous_patient_id,
                 }
 
-            return None
+        return None
 
     def resolve_dataset(self, dataset: Dataset) -> Dataset:
         """
@@ -181,3 +194,4 @@ class PHIResolver:
             elif original_id:
                 return mapping['anonymous_id']
         return None
+

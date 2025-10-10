@@ -96,17 +96,18 @@ class StoreHandler:
             int: DICOM status code (0x0000 = success, 0xC000 = failure)
         """
         try:
-            from receiver.services.access_control_service import extract_calling_ae_title, get_access_control_service
+            from receiver.services.access_control_service import extract_calling_ae_title, extract_requester_address, get_access_control_service
             calling_ae = extract_calling_ae_title(event)
+            requester_ip = extract_requester_address(event)
 
             access_control = get_access_control_service()
 
             if access_control:
-                allowed, reason = access_control.can_accept_store(calling_ae)
+                allowed, reason = access_control.can_accept_store(calling_ae, requester_ip)
                 if not allowed:
-                    logger.warning(f"C-STORE REJECTED from {calling_ae}: {reason}")
+                    logger.warning(f"C-STORE REJECTED from {calling_ae} ({requester_ip or 'unknown IP'}): {reason}")
                     return 0xC001
-                logger.debug(f"C-STORE access granted to {calling_ae}: {reason}")
+                logger.debug(f"C-STORE access granted to {calling_ae} ({requester_ip or 'unknown IP'}): {reason}")
             else:
                 logger.warning("Access control service not available, allowing C-STORE (fail-open mode)")
 

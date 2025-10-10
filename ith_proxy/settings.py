@@ -66,7 +66,7 @@ ROOT_URLCONF = 'ith_proxy.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'receiver' / 'templates'],
+        'DIRS': [],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -196,6 +196,10 @@ DICOM_AUTO_START = os.getenv('DICOM_AUTO_START', 'True').lower() == 'true'
 
 # Create storage directory if it doesn't exist
 Path(DICOM_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
+
+# Proxy Configuration Storage
+PROXY_CONFIG_DIR = os.getenv('PROXY_CONFIG_DIR', str(BASE_DIR / 'storage' / 'config'))
+Path(PROXY_CONFIG_DIR).mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
 # Study Archive & Upload Configuration

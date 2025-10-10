@@ -22,13 +22,19 @@ def register_shutdown_handlers():
         """Handle shutdown signals gracefully."""
         logger.info(f"Received shutdown signal: {signum}")
 
-        # Shutdown services
-        from receiver.apps import ReceiverConfig
-        ReceiverConfig.shutdown_websocket_client()
-        ReceiverConfig.shutdown_dicom_server()
+        try:
+            # Shutdown services
+            from receiver.apps import ReceiverConfig
+            ReceiverConfig.shutdown_websocket_client()
+            ReceiverConfig.shutdown_dicom_server()
 
-        logger.info("Shutdown complete")
-        sys.exit(0)
+            logger.info("Shutdown complete")
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}", exc_info=True)
+        finally:
+            # Let Django handle the exit gracefully instead of forcing sys.exit()
+            # This prevents thread join issues during shutdown
+            pass
 
     # Register handlers
     signal.signal(signal.SIGTERM, shutdown_handler)

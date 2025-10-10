@@ -77,73 +77,52 @@ class SeriesQueryHandler:
             for key, value in study_filters.items():
                 filters[f'session__{key}'] = value
 
-        series_list = Scan.objects.filter(**filters).select_related('session')
-        logger.info(f"Found {len(series_list)} series in local database")
+        if not self.api_query_service:
+            logger.error("API query service not available")
+            yield 0x0000, None
+            return
 
-        if not series_list and self.api_query_service:
-            logger.info("No local series found, querying ITH API...")
-            study_uid = query_ds.StudyInstanceUID if hasattr(query_ds, 'StudyInstanceUID') else None
-            if study_uid:
-                api_series = self.api_query_service.query_series_for_study(study_uid)
-                logger.info(f"Found {len(api_series)} series from API")
+        study_uid = query_ds.StudyInstanceUID if hasattr(query_ds, 'StudyInstanceUID') else None
+        if not study_uid:
+            logger.warning("No StudyInstanceUID provided for SERIES query")
+            yield 0x0000, None
+            return
 
-                response_count = 0
-                for series_info in api_series:
-                    response_ds = Dataset()
-                    response_ds.QueryRetrieveLevel = 'SERIES'
+        logger.info("Querying ITH API for series...")
+        api_series = self.api_query_service.query_series_for_study(study_uid)
 
-                    response_ds.PatientName = series_info.get('PatientName', '')
-                    response_ds.PatientID = series_info.get('PatientID', '')
+        if not api_series:
+            logger.info("No series found from API")
+            yield 0x0000, None
+            return
 
-                    response_ds.StudyInstanceUID = series_info.get('StudyInstanceUID', '')
-
-                    response_ds.SeriesInstanceUID = series_info.get('SeriesInstanceUID', '')
-                    response_ds.SeriesNumber = series_info.get('SeriesNumber', 0)
-                    response_ds.SeriesDescription = series_info.get('SeriesDescription', '')
-                    response_ds.Modality = series_info.get('Modality', '')
-                    response_ds.NumberOfSeriesRelatedInstances = series_info.get('NumberOfSeriesRelatedInstances', 0)
-
-                    logger.debug(f"Returning series: {response_ds.SeriesDescription or 'No Description'} "
-                               f"(Number: {response_ds.SeriesNumber}, Modality: {response_ds.Modality})")
-
-                    response_count += 1
-                    yield 0xFF00, response_ds
-
-                logger.info(f"SERIES query completed (API) - returned {response_count} series")
-                logger.info("=" * 60)
-                yield 0x0000, None
-                return
+        logger.info(f"Found {len(api_series)} series from API")
 
         response_count = 0
-        for series in series_list:
-            study = series.session
-
+        for series_info in api_series:
             response_ds = Dataset()
             response_ds.QueryRetrieveLevel = 'SERIES'
 
-            original = self.resolver.resolve_patient(anonymous_name=study.patient_name)
+            response_ds.PatientName = series_info.get('PatientName', '')
+            response_ds.PatientID = series_info.get('PatientID', '')
 
-            if original:
-                response_ds.PatientName = original['original_name']
-                response_ds.PatientID = original['original_id']
-            else:
-                response_ds.PatientName = study.patient_name
-                response_ds.PatientID = study.patient_id
+            response_ds.StudyInstanceUID = series_info.get('StudyInstanceUID', '')
 
-            response_ds.StudyInstanceUID = study.study_instance_uid
+            response_ds.SeriesInstanceUID = series_info.get('SeriesInstanceUID', '')
+            response_ds.SeriesNumber = series_info.get('SeriesNumber', 0)
+            response_ds.SeriesDescription = series_info.get('SeriesDescription', '')
+            response_ds.Modality = series_info.get('Modality', '')
+            response_ds.NumberOfSeriesRelatedInstances = series_info.get('NumberOfSeriesRelatedInstances', 0)
 
-            response_ds.SeriesInstanceUID = series.series_instance_uid
-            response_ds.SeriesNumber = series.series_number or 0
-            response_ds.SeriesDescription = series.series_description or ''
-            response_ds.Modality = series.modality or ''
-            response_ds.NumberOfSeriesRelatedInstances = series.instances_count
-
-            logger.debug(f"Returning series: {response_ds.SeriesDescription or 'No Description'} "
-                       f"(Number: {response_ds.SeriesNumber}, Modality: {response_ds.Modality})")
+            logger.info(f"Returning series #{response_count + 1}: {response_ds.SeriesDescription or 'No Description'}")
+            logger.info(f"   - SeriesInstanceUID: {response_ds.SeriesInstanceUID}")
+            logger.info(f"   - SeriesNumber: {response_ds.SeriesNumber}")
+            logger.info(f"   - Modality: {response_ds.Modality}")
+            logger.info(f"   - Instances: {response_ds.NumberOfSeriesRelatedInstances}")
 
             response_count += 1
             yield 0xFF00, response_ds
 
-        logger.info(f"SERIES query completed - returned {response_count} series")
+        logger.info(f"SERIES query completed (API) - returned {response_count} series")
         logger.info("=" * 60)
         yield 0x0000, None

@@ -86,22 +86,22 @@ class ProxyConfigChangedHandler:
         try:
             from receiver.services.proxy_config_service import get_config_service
 
-            def _reload():
-                config_service = get_config_service()
-                if not config_service:
-                    logger.error("Config service not available")
-                    return False
+            logger.info("Reloading configuration from API...")
 
-                success = config_service.fetch_and_save_configuration()
+            config_service = await sync_to_async(get_config_service, thread_sensitive=False)()
+            if not config_service:
+                logger.error("Config service not available")
+                return False
 
-                if success:
-                    logger.info(" Configuration fetched and saved")
-                    return True
-                else:
-                    logger.error(" Failed to fetch configuration from API")
-                    return False
+            config_data = await sync_to_async(config_service.fetch_configuration, thread_sensitive=False)()
 
-            return await sync_to_async(_reload)()
+            if config_data:
+                await sync_to_async(config_service.save_configuration, thread_sensitive=False)(config_data)
+                logger.info("Configuration reloaded successfully")
+                return True
+            else:
+                logger.error("Failed to fetch configuration from API")
+                return False
 
         except Exception as e:
             logger.error(f"Error reloading configuration: {e}", exc_info=True)

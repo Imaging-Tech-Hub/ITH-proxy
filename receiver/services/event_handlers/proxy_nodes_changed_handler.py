@@ -91,29 +91,29 @@ class ProxyNodesChangedHandler:
         try:
             from receiver.services.proxy_config_service import get_config_service
 
-            def _reload():
-                config_service = get_config_service()
-                if not config_service:
-                    logger.error("Config service not available")
-                    return False
+            logger.info("Reloading node configuration from API...")
 
-                config_data = config_service.fetch_configuration()
+            config_service = await sync_to_async(get_config_service, thread_sensitive=False)()
+            if not config_service:
+                logger.error("Config service not available")
+                return False
 
-                if config_data:
-                    config_service.save_configuration(config_data)
-                    logger.info("Node configuration fetched and saved")
+            config_data = await sync_to_async(config_service.fetch_configuration, thread_sensitive=False)()
 
-                    nodes = config_service.load_nodes()
-                    logger.info(f"Total nodes: {len(nodes)}")
-                    active_count = sum(1 for n in nodes if n.is_active)
-                    logger.info(f"Active nodes: {active_count}")
+            if config_data:
+                await sync_to_async(config_service.save_configuration, thread_sensitive=False)(config_data)
+                logger.info("Node configuration fetched and saved")
 
-                    return True
-                else:
-                    logger.error("Failed to fetch configuration from API")
-                    return False
+                nodes = await sync_to_async(config_service.load_nodes, thread_sensitive=False)()
+                logger.info(f"Total nodes: {len(nodes)}")
+                active_count = sum(1 for n in nodes if n.is_active)
+                logger.info(f"Active nodes: {active_count}")
 
-            return await sync_to_async(_reload)()
+                logger.info("Node configuration reloaded successfully")
+                return True
+            else:
+                logger.error("Failed to fetch configuration from API")
+                return False
 
         except Exception as e:
             logger.error(f"Error reloading nodes: {e}", exc_info=True)

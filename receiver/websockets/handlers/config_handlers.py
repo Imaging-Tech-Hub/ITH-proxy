@@ -60,56 +60,28 @@ class ProxyNodesChangedHandler(BaseEventHandler):
             self.logger.error(f"Error updating nodes configuration: {e}", exc_info=True)
 
     async def _save_node_configuration(self, nodes: List[NodeConfig], action: str):
-        """Save node configuration to file or cache."""
-        import json
-        from pathlib import Path
+        """Reload node configuration from API."""
         from asgiref.sync import sync_to_async
+        from receiver.services.proxy_config_service import get_config_service
 
-        @sync_to_async
-        def _save():
-            # TODO: Determine proper configuration storage location
-            # For now, save to a JSON file
-            config_dir = Path("/etc/ith-proxy") if Path("/etc/ith-proxy").exists() else Path.home() / ".ith-proxy"
-            config_dir.mkdir(parents=True, exist_ok=True)
+        self.logger.info(f"🔄 Reloading node configuration from API (action: {action})...")
 
-            config_file = config_dir / "nodes.json"
+        # Get config service and reload (use sync_to_async with thread_sensitive=False)
+        config_service = await sync_to_async(get_config_service, thread_sensitive=False)()
 
-            # Load existing config if action is not "replaced"
-            existing_nodes = {}
-            if action != "replaced" and config_file.exists():
-                with open(config_file, 'r') as f:
-                    existing_data = json.load(f)
-                    existing_nodes = {node['node_id']: node for node in existing_data.get('nodes', [])}
+        if not config_service:
+            self.logger.error("Config service not available")
+            return
 
-            # Apply changes based on action
-            if action == "replaced":
-                # Replace all nodes
-                node_configs = {node.node_id: node.to_dict() for node in nodes}
-            elif action == "added":
-                # Add new nodes
-                for node in nodes:
-                    existing_nodes[node.node_id] = node.to_dict()
-                node_configs = existing_nodes
-            elif action == "removed":
-                # Remove nodes
-                for node in nodes:
-                    existing_nodes.pop(node.node_id, None)
-                node_configs = existing_nodes
-            else:  # "updated"
-                # Update existing nodes
-                for node in nodes:
-                    existing_nodes[node.node_id] = node.to_dict()
-                node_configs = existing_nodes
+        # Fetch configuration from API
+        config_data = await sync_to_async(config_service.fetch_configuration, thread_sensitive=False)()
 
-            # Save to file
-            config_data = {
-                "nodes": list(node_configs.values())
-            }
-
-            with open(config_file, 'w') as f:
-                json.dump(config_data, f, indent=2)
-
-        await _save()
+        if config_data:
+            # Save to memory
+            await sync_to_async(config_service.save_configuration, thread_sensitive=False)(config_data)
+            self.logger.info("✅ Node configuration reloaded successfully from API")
+        else:
+            self.logger.error("❌ Failed to reload node configuration from API")
 
 
 class ProxyConfigChangedHandler(BaseEventHandler):
@@ -142,7 +114,7 @@ class ProxyConfigChangedHandler(BaseEventHandler):
         payload = event.get('payload', {})
 
         changed_fields = payload.get('changed_fields', [])
-        new_config = payload.get('new_config', {})
+        new_config = payload.get('config', {})
 
         self.logger.info(f"Handling proxy config changed: {changed_fields}")
 
@@ -156,38 +128,33 @@ class ProxyConfigChangedHandler(BaseEventHandler):
             self.logger.error(f"Error applying configuration: {e}", exc_info=True)
 
     async def _apply_configuration(self, config: Dict[str, Any], changed_fields: List[str]):
-        """Apply configuration changes."""
-        import json
-        from pathlib import Path
+        """Apply configuration changes by reloading from API."""
         from asgiref.sync import sync_to_async
+        from receiver.services.proxy_config_service import get_config_service
 
-        @sync_to_async
-        def _apply():
-            # TODO: Determine proper configuration storage location
-            config_dir = Path("/etc/ith-proxy") if Path("/etc/ith-proxy").exists() else Path.home() / ".ith-proxy"
-            config_dir.mkdir(parents=True, exist_ok=True)
+        # Log changes
+        for field in changed_fields:
+            value = config.get(field)
+            self.logger.info(f"Config changed: {field} = {value}")
 
-            config_file = config_dir / "proxy.json"
+        self.logger.info("🔄 Reloading configuration from API...")
 
-            # Load existing config
-            existing_config = {}
-            if config_file.exists():
-                with open(config_file, 'r') as f:
-                    existing_config = json.load(f)
+        # Get config service and reload (use sync_to_async with thread_sensitive=False)
+        config_service = await sync_to_async(get_config_service, thread_sensitive=False)()
 
-            # Update with new values
-            existing_config.update(config)
+        if not config_service:
+            self.logger.error("Config service not available")
+            return
 
-            # Save to file
-            with open(config_file, 'w') as f:
-                json.dump(existing_config, f, indent=2)
+        # Fetch configuration from API
+        config_data = await sync_to_async(config_service.fetch_configuration, thread_sensitive=False)()
 
-            # Log changes
-            for field in changed_fields:
-                value = config.get(field)
-                self.logger.info(f"Config updated: {field} = {value}")
-
-        await _apply()
+        if config_data:
+            # Save to memory
+            await sync_to_async(config_service.save_configuration, thread_sensitive=False)(config_data)
+            self.logger.info("✅ Configuration reloaded successfully")
+        else:
+            self.logger.error("❌ Failed to reload configuration")
 
 
 class ProxyStatusChangedHandler(BaseEventHandler):
@@ -226,15 +193,14 @@ class ProxyStatusChangedHandler(BaseEventHandler):
             self.logger.info(f"Reason: {reason}")
 
         try:
-            # Update proxy status
             await self._update_proxy_status(new_status, is_active, reason)
 
             if not is_active:
-                self.logger.warning("Proxy set to inactive - pausing operations")
-                # TODO: Pause all ongoing operations
+                self.logger.warning(f"Proxy set to inactive - Status: {new_status}, Reason: {reason}")
+                self.logger.warning("All new DICOM associations will be rejected by access control")
             else:
-                self.logger.info("Proxy set to active - resuming operations")
-                # TODO: Resume operations
+                self.logger.info(f"Proxy set to active - Status: {new_status}")
+                self.logger.info("DICOM associations will be accepted per access control rules")
 
         except Exception as e:
             self.logger.error(f"Error updating proxy status: {e}", exc_info=True)
@@ -247,9 +213,9 @@ class ProxyStatusChangedHandler(BaseEventHandler):
 
         @sync_to_async
         def _update():
-            config_dir = Path("/etc/ith-proxy") if Path("/etc/ith-proxy").exists() else Path.home() / ".ith-proxy"
-            config_dir.mkdir(parents=True, exist_ok=True)
+            from django.conf import settings
 
+            config_dir = Path(settings.PROXY_CONFIG_DIR)
             status_file = config_dir / "status.json"
 
             status_data = {

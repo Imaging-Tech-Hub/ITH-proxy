@@ -97,7 +97,7 @@ class NewScanAvailableHandler:
                 logger.error(" Failed to extract scan archive")
                 return False
 
-            resolved_dir = await self._resolve_dicom_files(dicom_dir)
+            resolved_dir = await self._resolve_dicom_files(dicom_dir, subject_id=subject_id)
 
             if not resolved_dir:
                 logger.error(" Failed to resolve PHI in DICOM files")
@@ -129,29 +129,26 @@ class NewScanAvailableHandler:
         try:
             from receiver.services.proxy_config_service import get_config_service
 
-            def _get_nodes():
-                config_service = get_config_service()
-                if not config_service:
-                    return []
+            config_service = await sync_to_async(get_config_service, thread_sensitive=False)()
+            if not config_service:
+                return []
 
-                all_nodes = config_service.load_nodes()
-                active_nodes = []
+            all_nodes = await sync_to_async(config_service.load_nodes, thread_sensitive=False)()
+            active_nodes = []
 
-                for node in all_nodes:
-                    if not node.is_active:
-                        logger.debug(f"Node {node.name} is inactive, skipping")
-                        continue
+            for node in all_nodes:
+                if not node.is_active:
+                    logger.debug(f"Node {node.name} is inactive, skipping")
+                    continue
 
-                    if not node.is_reachable:
-                        logger.debug(f"Node {node.name} is not reachable, skipping")
-                        continue
+                if not node.is_reachable:
+                    logger.debug(f"Node {node.name} is not reachable, skipping")
+                    continue
 
-                    logger.info(f" Auto-dispatch target: {node.name} ({node.node_id})")
-                    active_nodes.append(node)
+                logger.info(f" Auto-dispatch target: {node.name} ({node.node_id})")
+                active_nodes.append(node)
 
-                return active_nodes
-
-            return await sync_to_async(_get_nodes)()
+            return active_nodes
 
         except Exception as e:
             logger.error(f"Error getting auto-dispatch nodes: {e}", exc_info=True)
@@ -179,26 +176,26 @@ class NewScanAvailableHandler:
         try:
             from receiver.containers import container
 
-            def _download():
-                api_client = container.ith_api_client()
-                api_client.workspace_id = workspace_id
+            api_client = await sync_to_async(container.ith_api_client, thread_sensitive=False)()
+            api_client.workspace_id = workspace_id
 
-                temp_dir = Path(tempfile.gettempdir()) / "new_scan_available"
-                temp_dir.mkdir(parents=True, exist_ok=True)
-                zip_path = temp_dir / f"{scan_id}.zip"
+            temp_dir = Path(tempfile.gettempdir()) / "new_scan_available"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            zip_path = temp_dir / f"{scan_id}.zip"
 
-                logger.info(f" Downloading new scan from API...")
-                api_client.download_scan(
-                    scan_id=scan_id,
-                    subject_id=subject_id,
-                    session_id=session_id,
-                    output_path=zip_path
-                )
+            logger.info(f" Downloading new scan from API...")
+            await sync_to_async(
+                api_client.download_scan,
+                thread_sensitive=False
+            )(
+                scan_id=scan_id,
+                subject_id=subject_id,
+                session_id=session_id,
+                output_path=zip_path
+            )
 
-                logger.info(f" Downloaded scan to {zip_path}")
-                return zip_path
-
-            return await sync_to_async(_download)()
+            logger.info(f" Downloaded scan to {zip_path}")
+            return zip_path
 
         except Exception as e:
             logger.error(f"Error downloading scan: {e}", exc_info=True)
@@ -215,60 +212,69 @@ class NewScanAvailableHandler:
             Path to extracted directory, or None if failed
         """
         try:
-            def _extract():
-                extract_dir = zip_path.parent / f"{zip_path.stem}_extracted"
-                extract_dir.mkdir(parents=True, exist_ok=True)
+            extract_dir = zip_path.parent / f"{zip_path.stem}_extracted"
+            extract_dir.mkdir(parents=True, exist_ok=True)
 
-                logger.info(f" Extracting scan archive...")
+            logger.info(f" Extracting scan archive...")
+
+            # Extract ZIP file
+            def _do_extract():
                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                     zip_ref.extractall(extract_dir)
 
-                dcm_files = list(extract_dir.rglob('*.dcm'))
-                logger.info(f" Extracted {len(dcm_files)} DICOM files")
+            await sync_to_async(_do_extract, thread_sensitive=False)()
 
-                return extract_dir
+            dcm_files = list(extract_dir.rglob('*.dcm'))
+            logger.info(f" Extracted {len(dcm_files)} DICOM files")
 
-            return await sync_to_async(_extract)()
+            return extract_dir
 
         except Exception as e:
             logger.error(f"Error extracting scan: {e}", exc_info=True)
             return None
 
-    async def _resolve_dicom_files(self, dicom_dir: Path) -> Path:
+    async def _resolve_dicom_files(self, dicom_dir: Path, subject_id: str = None) -> Path:
         """
         Resolve PHI in all DICOM files (de-anonymize).
+        Uses local database only for PHI resolution.
 
         Args:
             dicom_dir: Directory containing anonymized DICOM files
+            subject_id: Backend subject ID (not used, PHI resolved from local DB)
 
         Returns:
             Path to directory with resolved files, or None if failed
         """
         try:
-            def _resolve():
-                from receiver.controllers.phi_resolver import PHIResolver
-                resolver = PHIResolver()
+            from receiver.containers import container
 
-                dcm_files = list(dicom_dir.rglob('*.dcm'))
-                logger.info(f"🔍 Resolving PHI for {len(dcm_files)} DICOM files...")
+            resolver = await sync_to_async(container.phi_resolver, thread_sensitive=False)()
 
-                resolved_count = 0
-                for dcm_file in dcm_files:
-                    try:
-                        ds = dcmread(str(dcm_file))
+            dcm_files = list(dicom_dir.rglob('*.dcm'))
+            logger.info(f"🔍 Resolving PHI for {len(dcm_files)} DICOM files...")
 
-                        ds = resolver.resolve_dataset(ds)
+            resolved_count = 0
+            for dcm_file in dcm_files:
+                try:
+                    # Read DICOM file
+                    def _read_dcm():
+                        return dcmread(str(dcm_file))
+                    ds = await sync_to_async(_read_dcm, thread_sensitive=False)()
 
+                    # Resolve PHI from local database
+                    ds = await sync_to_async(resolver.resolve_dataset, thread_sensitive=False)(ds)
+
+                    # Save resolved file
+                    def _save_dcm():
                         ds.save_as(str(dcm_file))
-                        resolved_count += 1
+                    await sync_to_async(_save_dcm, thread_sensitive=False)()
 
-                    except Exception as e:
-                        logger.warning(f"Failed to resolve {dcm_file.name}: {e}")
+                    resolved_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to resolve {dcm_file.name}: {e}")
 
-                logger.info(f"✅ Resolved PHI for {resolved_count}/{len(dcm_files)} files")
-                return dicom_dir
-
-            return await sync_to_async(_resolve)()
+            logger.info(f"✅ Resolved PHI for {resolved_count}/{len(dcm_files)} files")
+            return dicom_dir
 
         except Exception as e:
             logger.error(f"Error resolving DICOM files: {e}", exc_info=True)
@@ -281,7 +287,7 @@ class NewScanAvailableHandler:
         scan_label: str
     ) -> bool:
         """
-        Send DICOM files to all specified nodes.
+        Send DICOM files to all specified nodes with duplicate dispatch prevention.
 
         Args:
             nodes: List of NodeConfig objects
@@ -293,18 +299,63 @@ class NewScanAvailableHandler:
         """
         try:
             from receiver.commands.dicom_send_commands import SendDICOMToMultipleNodesCommand
+            from receiver.services.dispatch_lock_manager import get_dispatch_lock_manager
 
-            def _send():
-                logger.info(f" Auto-dispatching {scan_label} to {len(nodes)} nodes...")
+            lock_manager = await sync_to_async(get_dispatch_lock_manager, thread_sensitive=False)()
 
-                cmd = SendDICOMToMultipleNodesCommand(
-                    nodes=nodes,
-                    directory=dicom_dir,
-                    recursive=True,
-                    ae_title='DICOM_PROXY'
+            study_uid = 'unknown'
+            dcm_files = list(dicom_dir.rglob('*.dcm'))
+            if dcm_files:
+                try:
+                    def _read_uid():
+                        ds = dcmread(str(dcm_files[0]))
+                        return getattr(ds, 'StudyInstanceUID', 'unknown')
+                    study_uid = await sync_to_async(_read_uid, thread_sensitive=False)()
+                except Exception as e:
+                    logger.warning(f"Could not read StudyInstanceUID from DICOM: {e}")
+
+            nodes_to_send = []
+            skipped_nodes = []
+
+            for node in nodes:
+                acquired = await sync_to_async(
+                    lock_manager.acquire_lock,
+                    thread_sensitive=False
+                )(node.node_id, 'new_scan', study_uid)
+
+                if acquired:
+                    nodes_to_send.append(node)
+                else:
+                    skipped_nodes.append(node)
+                    logger.warning(
+                        f"🔒 Skipping {node.name}: dispatch already in progress for "
+                        f"study {study_uid}"
+                    )
+
+            if not nodes_to_send:
+                logger.warning("All nodes are already processing this dispatch, skipping")
+                return False
+
+            if skipped_nodes:
+                logger.info(
+                    f"Skipped {len(skipped_nodes)} node(s) due to in-progress dispatch, "
+                    f"sending to {len(nodes_to_send)} node(s)"
                 )
 
-                result = cmd.execute()
+            try:
+                logger.info(f" Auto-dispatching {scan_label} to {len(nodes_to_send)} nodes...")
+                logger.info(f"StudyInstanceUID: {study_uid}")
+
+                def _execute_send():
+                    cmd = SendDICOMToMultipleNodesCommand(
+                        nodes=nodes_to_send,
+                        directory=dicom_dir,
+                        recursive=True,
+                        ae_title='DICOM_PROXY'
+                    )
+                    return cmd.execute()
+
+                result = await sync_to_async(_execute_send, thread_sensitive=False)()
 
                 if result.success:
                     logger.info(f" Successfully sent to {result.metadata.get('successful_nodes', 0)} nodes")
@@ -315,7 +366,12 @@ class NewScanAvailableHandler:
                     logger.error(f" Failed to send to nodes: {result.error}")
                     return False
 
-            return await sync_to_async(_send)()
+            finally:
+                for node in nodes_to_send:
+                    await sync_to_async(
+                        lock_manager.release_lock,
+                        thread_sensitive=False
+                    )(node.node_id, 'new_scan', study_uid)
 
         except Exception as e:
             logger.error(f"Error sending to nodes: {e}", exc_info=True)
@@ -332,16 +388,17 @@ class NewScanAvailableHandler:
         try:
             import shutil
 
-            def _do_cleanup():
-                if zip_path and zip_path.exists():
+            if zip_path and zip_path.exists():
+                def _delete_zip():
                     zip_path.unlink()
-                    logger.debug(f"🗑️  Deleted {zip_path}")
+                await sync_to_async(_delete_zip, thread_sensitive=False)()
+                logger.debug(f"🗑️  Deleted {zip_path}")
 
-                if extract_dir and extract_dir.exists():
+            if extract_dir and extract_dir.exists():
+                def _delete_dir():
                     shutil.rmtree(extract_dir)
-                    logger.debug(f"🗑️  Deleted {extract_dir}")
-
-            await sync_to_async(_do_cleanup)()
+                await sync_to_async(_delete_dir, thread_sensitive=False)()
+                logger.debug(f"🗑️  Deleted {extract_dir}")
 
         except Exception as e:
             logger.warning(f"Error cleaning up temporary files: {e}")

@@ -32,6 +32,35 @@ def extract_calling_ae_title(event: Any) -> str:
     return "UNKNOWN"
 
 
+def extract_requester_address(event: Any) -> Optional[str]:
+    """
+    Extract requester IP address from DICOM event.
+
+    Args:
+        event: pynetdicom event object
+
+    Returns:
+        str: IP address or None if extraction fails
+    """
+    try:
+        if hasattr(event, 'assoc') and hasattr(event.assoc, 'requestor'):
+            if hasattr(event.assoc.requestor, 'address'):
+                address = event.assoc.requestor.address
+                if address:
+                    return str(address)
+
+            if hasattr(event.assoc, 'remote') and hasattr(event.assoc.remote, 'address'):
+                remote_addr = event.assoc.remote.address
+                if remote_addr:
+                    if isinstance(remote_addr, tuple) and len(remote_addr) >= 1:
+                        return str(remote_addr[0])
+                    return str(remote_addr)
+    except Exception as e:
+        logger.debug(f"Could not extract requester address: {e}")
+
+    return None
+
+
 class AccessControlService:
     """
     Service for validating DICOM access based on proxy mode and node permissions.
@@ -76,13 +105,14 @@ class AccessControlService:
         """Check if proxy is in private mode."""
         return self.get_mode() == 'private'
 
-    def find_node_by_ae_title(self, ae_title: str) -> Optional[NodeConfig]:
+    def find_node_by_ae_title(self, ae_title: str, requester_ip: Optional[str] = None) -> Optional[NodeConfig]:
         """
-        Find a configured node by its AE title.
+        Find a configured node by its AE title and optionally by IP address.
         Case-insensitive comparison with whitespace trimming.
 
         Args:
             ae_title: DICOM AE Title of the node
+            requester_ip: Optional IP address of the requester for additional validation
 
         Returns:
             NodeConfig if found, None otherwise
@@ -93,18 +123,40 @@ class AccessControlService:
         normalized_ae = ae_title.strip().upper()
 
         nodes = self.config_service.load_nodes()
+        matched_nodes = []
+
+        # First pass: Match by AE title
         for node in nodes:
             node_ae_normalized = node.ae_title.strip().upper() if node.ae_title else ""
             if node_ae_normalized == normalized_ae:
-                return node
-        return None
+                matched_nodes.append(node)
 
-    def can_accept_store(self, calling_ae_title: str) -> Tuple[bool, str]:
+        if not matched_nodes:
+            return None
+
+        # If only one match, return it
+        if len(matched_nodes) == 1:
+            return matched_nodes[0]
+
+        # If multiple matches and we have requester IP, try to match by IP
+        if requester_ip and len(matched_nodes) > 1:
+            logger.info(f"Multiple nodes found with AE title '{ae_title}', matching by IP: {requester_ip}")
+            for node in matched_nodes:
+                if node.host == requester_ip:
+                    logger.info(f"Matched node by IP: {node.name} ({node.host})")
+                    return node
+            logger.warning(f"No node matched by IP {requester_ip}, using first match")
+
+        # Return first match if no IP match or no IP provided
+        return matched_nodes[0]
+
+    def can_accept_store(self, calling_ae_title: str, requester_ip: Optional[str] = None) -> Tuple[bool, str]:
         """
         Check if proxy can accept C-STORE from a calling AE.
 
         Args:
             calling_ae_title: AE title of the calling node
+            requester_ip: Optional IP address of the requester
 
         Returns:
             Tuple[bool, str]: (allowed, reason)
@@ -112,13 +164,13 @@ class AccessControlService:
         mode = self.get_mode()
 
         if mode == 'public':
-            logger.debug(f"C-STORE allowed in public mode from {calling_ae_title}")
+            logger.debug(f"C-STORE allowed in public mode from {calling_ae_title} ({requester_ip or 'unknown IP'})")
             return True, "Public mode - all nodes allowed"
 
-        node = self.find_node_by_ae_title(calling_ae_title)
+        node = self.find_node_by_ae_title(calling_ae_title, requester_ip)
 
         if not node:
-            logger.warning(f"C-STORE rejected: Unknown node '{calling_ae_title}' in private mode")
+            logger.warning(f"C-STORE rejected: Unknown node '{calling_ae_title}' ({requester_ip or 'unknown IP'}) in private mode")
             return False, f"Node '{calling_ae_title}' not configured"
 
         if not node.is_active:
@@ -127,18 +179,19 @@ class AccessControlService:
 
         permission = node.permission.lower() if node.permission else "none"
         if permission in ['write', 'read_write']:
-            logger.debug(f"C-STORE allowed from {calling_ae_title} (permission: {permission})")
+            logger.debug(f"C-STORE allowed from {calling_ae_title} @ {node.host} (permission: {permission})")
             return True, f"Node has {permission} permission"
         else:
             logger.warning(f"C-STORE rejected: Node '{calling_ae_title}' has {permission} permission (needs write or read_write)")
             return False, f"Node has {permission} permission (needs write or read_write)"
 
-    def can_accept_query(self, calling_ae_title: str) -> Tuple[bool, str]:
+    def can_accept_query(self, calling_ae_title: str, requester_ip: Optional[str] = None) -> Tuple[bool, str]:
         """
         Check if proxy can accept C-FIND from a calling AE.
 
         Args:
             calling_ae_title: AE title of the calling node
+            requester_ip: Optional IP address of the requester
 
         Returns:
             Tuple[bool, str]: (allowed, reason)
@@ -146,13 +199,13 @@ class AccessControlService:
         mode = self.get_mode()
 
         if mode == 'public':
-            logger.info(f"C-FIND allowed in PUBLIC mode from {calling_ae_title} (permissions not enforced)")
+            logger.info(f"C-FIND allowed in PUBLIC mode from {calling_ae_title} ({requester_ip or 'unknown IP'}) (permissions not enforced)")
             return True, "Public mode - all nodes allowed"
 
-        node = self.find_node_by_ae_title(calling_ae_title)
+        node = self.find_node_by_ae_title(calling_ae_title, requester_ip)
 
         if not node:
-            logger.warning(f"C-FIND rejected: Unknown node '{calling_ae_title}' in private mode")
+            logger.warning(f"C-FIND rejected: Unknown node '{calling_ae_title}' ({requester_ip or 'unknown IP'}) in private mode")
             return False, f"Node '{calling_ae_title}' not configured"
 
         if not node.is_active:
@@ -161,18 +214,19 @@ class AccessControlService:
 
         permission = node.permission.lower() if node.permission else "none"
         if permission in ['read', 'read_write']:
-            logger.info(f"C-FIND allowed in PRIVATE mode from {calling_ae_title} (permission: {permission})")
+            logger.info(f"C-FIND allowed in PRIVATE mode from {calling_ae_title} @ {node.host} (permission: {permission})")
             return True, f"Node has {permission} permission"
         else:
             logger.warning(f"C-FIND REJECTED in PRIVATE mode: Node '{calling_ae_title}' has {permission} permission (needs read or read_write)")
             return False, f"Node has {permission} permission (needs read or read_write)"
 
-    def can_accept_retrieve(self, calling_ae_title: str, operation: str = "C-GET") -> Tuple[bool, str]:
+    def can_accept_retrieve(self, calling_ae_title: str, requester_ip: Optional[str] = None, operation: str = "C-GET") -> Tuple[bool, str]:
         """
         Check if proxy can accept C-GET or C-MOVE from a calling AE.
 
         Args:
             calling_ae_title: AE title of the calling node
+            requester_ip: Optional IP address of the requester
             operation: Operation type (C-GET or C-MOVE)
 
         Returns:
@@ -181,13 +235,13 @@ class AccessControlService:
         mode = self.get_mode()
 
         if mode == 'public':
-            logger.debug(f"{operation} allowed in public mode from {calling_ae_title}")
+            logger.debug(f"{operation} allowed in public mode from {calling_ae_title} ({requester_ip or 'unknown IP'})")
             return True, "Public mode - all nodes allowed"
 
-        node = self.find_node_by_ae_title(calling_ae_title)
+        node = self.find_node_by_ae_title(calling_ae_title, requester_ip)
 
         if not node:
-            logger.warning(f"{operation} rejected: Unknown node '{calling_ae_title}' in private mode")
+            logger.warning(f"{operation} rejected: Unknown node '{calling_ae_title}' ({requester_ip or 'unknown IP'}) in private mode")
             return False, f"Node '{calling_ae_title}' not configured"
 
         if not node.is_active:
@@ -196,7 +250,7 @@ class AccessControlService:
 
         permission = node.permission.lower() if node.permission else "none"
         if permission in ['read', 'read_write']:
-            logger.debug(f"{operation} allowed from {calling_ae_title} (permission: {permission})")
+            logger.debug(f"{operation} allowed from {calling_ae_title} @ {node.host} (permission: {permission})")
             return True, f"Node has {permission} permission"
         else:
             logger.warning(f"{operation} rejected: Node '{calling_ae_title}' has {permission} permission (needs read or read_write)")

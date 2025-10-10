@@ -27,6 +27,7 @@ class PatientQueryHandler:
     def find(self, query_ds):
         """
         Find patients matching the query.
+        Always queries from API only.
 
         Args:
             query_ds: Query dataset
@@ -34,55 +35,43 @@ class PatientQueryHandler:
         Yields:
             tuple: (status_code, response_dataset)
         """
-        logger.info("👥 Processing PATIENT level C-FIND")
+        logger.info("👥 Processing PATIENT level C-FIND - Querying API")
 
-        filters = {}
+        # Always query from API
+        if not self.api_query_service:
+            logger.error("API query service not available")
+            yield 0x0000, None
+            return
 
-        if hasattr(query_ds, 'PatientID') and query_ds.PatientID:
-            anonymized_id = self.resolver.resolve_to_anonymous(original_id=query_ds.PatientID)
-            if anonymized_id:
-                filters['patient_id'] = anonymized_id
-                logger.info(f"Filtering by Patient ID: {query_ds.PatientID} (anonymized)")
-            else:
-                filters['patient_id'] = query_ds.PatientID
-                logger.info(f"Filtering by Patient ID: {query_ds.PatientID}")
+        logger.info("Querying ITH API for patients...")
+        api_patients = self.api_query_service.query_all_patients()
 
-        if hasattr(query_ds, 'PatientName') and query_ds.PatientName:
-            anonymized_name = self.resolver.resolve_to_anonymous(original_name=str(query_ds.PatientName))
-            if anonymized_name:
-                filters['patient_name'] = anonymized_name
-                logger.info(f"Filtering by Patient Name: {query_ds.PatientName} (anonymized)")
-            else:
-                filters['patient_name'] = str(query_ds.PatientName)
-                logger.info(f"Filtering by Patient Name: {query_ds.PatientName}")
+        if not api_patients:
+            logger.info("No patients found from API")
+            yield 0x0000, None
+            return
 
-        patient_ids = Session.objects.filter(**filters).values_list('patient_id', flat=True).distinct()
-        logger.info(f" Found {len(patient_ids)} unique patients matching query")
+        logger.info(f"Found {len(api_patients)} patients from API")
 
         response_count = 0
-        for patient_id in patient_ids:
-            study = Session.objects.filter(patient_id=patient_id).first()
-            if not study:
-                continue
-
+        for patient_info in api_patients:
             response_ds = Dataset()
             response_ds.QueryRetrieveLevel = 'PATIENT'
 
-            original = self.resolver.resolve_patient(anonymous_name=study.patient_name)
+            response_ds.PatientName = patient_info.get('PatientName', '')
+            response_ds.PatientID = patient_info.get('PatientID', '')
 
-            if original:
-                response_ds.PatientName = original['original_name']
-                response_ds.PatientID = original['original_id']
-            else:
-                response_ds.PatientName = study.patient_name
-                response_ds.PatientID = study.patient_id
+            if patient_info.get('PatientBirthDate'):
+                response_ds.PatientBirthDate = patient_info['PatientBirthDate']
+            if patient_info.get('PatientSex'):
+                response_ds.PatientSex = patient_info['PatientSex']
 
-            logger.info(f" Returning patient #{response_count + 1}:")
-            logger.info(f" Patient: {response_ds.PatientName} (ID: {response_ds.PatientID})")
+            logger.info(f"   Returning patient #{response_count + 1}:")
+            logger.info(f"   Patient: {response_ds.PatientName} (ID: {response_ds.PatientID})")
 
             response_count += 1
             yield 0xFF00, response_ds
 
-        logger.info(f" PATIENT query completed - returned {response_count} patients")
+        logger.info(f"PATIENT query completed (API) - returned {response_count} patients")
         logger.info("=" * 60)
         yield 0x0000, None
