@@ -8,7 +8,6 @@ import logging
 if TYPE_CHECKING:
     from ..consumer import ProxyConsumer
 
-# Use websocket logger for base handler (transport/connection)
 logger = logging.getLogger('receiver.websockets')
 
 
@@ -26,7 +25,6 @@ class BaseEventHandler(ABC):
             consumer: ProxyConsumer instance that received the event
         """
         self.consumer = consumer
-        # Each handler should use its own logger from the events namespace
         handler_name = self.__class__.__module__.replace('receiver.websockets.handlers', 'receiver.websockets.events')
         self.logger = logging.getLogger(handler_name)
 

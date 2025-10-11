@@ -59,7 +59,7 @@ class ReceiverConfig(AppConfig):
     def load_proxy_configuration(self):
         """Load proxy configuration from backend API."""
         try:
-            from receiver.services.proxy_config_service import get_config_service
+            from receiver.services.config import get_config_service
 
             config_service = get_config_service()
             if not config_service:
@@ -80,7 +80,7 @@ class ReceiverConfig(AppConfig):
         """Start WebSocket client for backend communication."""
         try:
             import asyncio
-            from receiver.services.proxy_websocket_client import get_websocket_client
+            from receiver.services.api import get_websocket_client
 
             self.websocket_client = get_websocket_client()
 

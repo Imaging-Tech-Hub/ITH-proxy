@@ -1,44 +1,15 @@
 """
-WebSocket system for real-time proxy communication.
+WebSocket Module - Real-time Communication Layer
+
+Handles bidirectional WebSocket communication with ITH backend:
+- consumer.py: Django Channels WebSocket consumer
+- handlers/: Event handlers for different event types
+
+Event handlers process incoming events and trigger appropriate actions
+using commands and services.
 """
-from .events import (
-    # Base
-    WebSocketEvent,
 
-    # Incoming Events
-    PingEvent,
-    SessionDeletedEvent,
-    ScanDeletedEvent,
-    SubjectDispatchEvent,
-    SessionDispatchEvent,
-    ScanDispatchEvent,
-    ProxyNodesChangedEvent,
-    ProxyConfigChangedEvent,
-    ProxyStatusChangedEvent,
+# Note: Import handlers from subdirectory directly
+# Example: from receiver.websockets.handlers import SessionDispatchHandler
 
-    # Outgoing Events
-    PongEvent,
-    DispatchStatusEvent,
-    ProxyHeartbeatEvent,
-)
-
-__all__ = [
-    # Base
-    'WebSocketEvent',
-
-    # Incoming Events (from backend)
-    'PingEvent',
-    'SessionDeletedEvent',
-    'ScanDeletedEvent',
-    'SubjectDispatchEvent',
-    'SessionDispatchEvent',
-    'ScanDispatchEvent',
-    'ProxyNodesChangedEvent',
-    'ProxyConfigChangedEvent',
-    'ProxyStatusChangedEvent',
-
-    # Outgoing Events (to backend)
-    'PongEvent',
-    'DispatchStatusEvent',
-    'ProxyHeartbeatEvent',
-]
+__all__ = []

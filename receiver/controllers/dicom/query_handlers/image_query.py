@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from pydicom import Dataset
 from receiver.models import Session, Scan
-from receiver.utils.instance_metadata import InstanceMetadataHandler
+from receiver.utils.storage import InstanceMetadataHandler
 
 logger = logging.getLogger('receiver.query.image')
 
@@ -42,7 +42,6 @@ class ImageQueryHandler:
         """
         logger.info("Processing IMAGE level C-FIND - Querying API")
 
-        # Always query from API
         if not self.api_query_service:
             logger.error("API query service not available")
             yield 0x0000, None

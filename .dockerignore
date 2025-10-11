@@ -25,15 +25,14 @@ ENV/
 # Database
 *.sqlite3
 db.sqlite3
-storage/database/
+data/database/
 
 # Logs
-storage/logs/*.log
-storage/logs/*.log.*
+data/logs/*.log
+data/logs/*.log.*
 
-# DICOM files
-storage/studies/
-archives/
+# DICOM files and data directory
+data/
 
 # Environment
 .env

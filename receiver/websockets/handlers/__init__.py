@@ -1,17 +1,23 @@
 """
 WebSocket Event Handlers.
+
 Each handler processes a specific event type from the backend.
+Handlers are organized by category:
+- system/: System-level handlers (ping/pong, connection management)
+- dispatch/: Subject/session/scan dispatch events
+- config/: Proxy configuration update events
+- deletion/: Entity deletion events
 """
 from .base import BaseEventHandler
-from .ping_handler import PingHandler
-from .deletion_handlers import SessionDeletedHandler, ScanDeletedHandler
-from .dispatch_handlers import (
+from .system import PingHandler
+from .deletion import SessionDeletedHandler, ScanDeletedHandler
+from .dispatch import (
     SubjectDispatchHandler,
     SessionDispatchHandler,
     ScanDispatchHandler,
     NewScanAvailableHandler
 )
-from .config_handlers import (
+from .config import (
     ProxyNodesChangedHandler,
     ProxyConfigChangedHandler,
     ProxyStatusChangedHandler
@@ -21,7 +27,7 @@ __all__ = [
     # Base
     'BaseEventHandler',
 
-    # Ping
+    # System Handlers
     'PingHandler',
 
     # Deletion Handlers

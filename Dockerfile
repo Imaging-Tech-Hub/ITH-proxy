@@ -28,11 +28,12 @@ RUN pip install --upgrade pip && \
 COPY . /app/
 
 # Create necessary directories
-RUN mkdir -p /app/storage/logs && \
-    mkdir -p /app/storage/studies && \
-    mkdir -p /app/storage/database && \
-    mkdir -p /app/archives && \
-    chmod -R 755 /app/storage
+RUN mkdir -p /app/data/logs && \
+    mkdir -p /app/data/studies && \
+    mkdir -p /app/data/database && \
+    mkdir -p /app/data/archives && \
+    mkdir -p /app/data/config && \
+    chmod -R 755 /app/data
 
 # Collect static files (if needed for admin)
 RUN python manage.py collectstatic --noinput || true

@@ -2,8 +2,7 @@
 Receiver app URL configuration
 """
 from django.urls import path
-from receiver.views.phi_api import PHIMetadataAPIView
-from receiver.views.health_views import PublicHealthCheckView, AuthenticatedStatusView
+from receiver.views import PHIMetadataAPIView, PublicHealthCheckView, AuthenticatedStatusView
 
 app_name = 'receiver'
 

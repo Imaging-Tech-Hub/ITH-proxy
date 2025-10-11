@@ -107,7 +107,7 @@ if DATABASE_ENGINE == 'postgresql':
     }
 else:
     # Default to SQLite
-    sqlite_path = os.getenv('DATABASE_PATH', str(BASE_DIR / 'storage' / 'database' / 'db.sqlite3'))
+    sqlite_path = os.getenv('DATABASE_PATH', str(BASE_DIR / 'data' / 'database' / 'db.sqlite3'))
     # Create database directory if it doesn't exist
     Path(sqlite_path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -168,10 +168,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # DICOM Network Configuration
 DICOM_AE_TITLE = os.getenv('DICOM_AE_TITLE', 'DICOMRCV')
 DICOM_PORT = int(os.getenv('DICOM_PORT', '11112'))
-DICOM_BIND_ADDRESS = os.getenv('DICOM_BIND_ADDRESS', '')  # Empty = bind to all interfaces
+# Strip whitespace and treat empty/whitespace-only as empty string
+_bind_addr = os.getenv('DICOM_BIND_ADDRESS', '').strip()
+DICOM_BIND_ADDRESS = _bind_addr if _bind_addr else ''  # Empty = bind to all interfaces
 
 # Storage Configuration
-DICOM_STORAGE_DIR = os.getenv('DICOM_STORAGE_DIR', str(BASE_DIR / 'storage'))
+DICOM_STORAGE_DIR = os.getenv('DICOM_STORAGE_DIR', str(BASE_DIR / 'data' / 'studies'))
 
 # Study Completion Configuration
 DICOM_STUDY_TIMEOUT = int(os.getenv('DICOM_STUDY_TIMEOUT', '60'))  # seconds
@@ -179,11 +181,13 @@ DICOM_STUDY_TIMEOUT = int(os.getenv('DICOM_STUDY_TIMEOUT', '60'))  # seconds
 # DICOM Protocol Configuration
 DICOM_MAX_PDU_SIZE = int(os.getenv('DICOM_MAX_PDU_SIZE', '16384'))  # bytes
 DICOM_ACSE_TIMEOUT = int(os.getenv('DICOM_ACSE_TIMEOUT', '30'))  # seconds
+DICOM_DIMSE_TIMEOUT = int(os.getenv('DICOM_DIMSE_TIMEOUT', '60'))  # seconds - for C-GET operations
+DICOM_NETWORK_TIMEOUT = int(os.getenv('DICOM_NETWORK_TIMEOUT', '60'))  # seconds - overall network timeout
 DICOM_MAX_ASSOCIATIONS = int(os.getenv('DICOM_MAX_ASSOCIATIONS', '50'))
 
 # Logging Configuration
 DICOM_LOG_LEVEL = os.getenv('DICOM_LOG_LEVEL', 'INFO')
-DICOM_LOG_DIR = os.getenv('DICOM_LOG_DIR', str(BASE_DIR / 'storage' / 'logs'))
+DICOM_LOG_DIR = os.getenv('DICOM_LOG_DIR', str(BASE_DIR / 'data' / 'logs'))
 
 # Create logs directory if it doesn't exist
 Path(DICOM_LOG_DIR).mkdir(parents=True, exist_ok=True)
@@ -198,7 +202,7 @@ DICOM_AUTO_START = os.getenv('DICOM_AUTO_START', 'True').lower() == 'true'
 Path(DICOM_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
 
 # Proxy Configuration Storage
-PROXY_CONFIG_DIR = os.getenv('PROXY_CONFIG_DIR', str(BASE_DIR / 'storage' / 'config'))
+PROXY_CONFIG_DIR = os.getenv('PROXY_CONFIG_DIR', str(BASE_DIR / 'data' / 'config'))
 Path(PROXY_CONFIG_DIR).mkdir(parents=True, exist_ok=True)
 
 # =============================================================================
@@ -206,7 +210,7 @@ Path(PROXY_CONFIG_DIR).mkdir(parents=True, exist_ok=True)
 # =============================================================================
 
 # Archive directory for ZIP files
-ARCHIVE_DIR = os.getenv('ARCHIVE_DIR', str(BASE_DIR / 'storage' / 'archives'))
+ARCHIVE_DIR = os.getenv('ARCHIVE_DIR', str(BASE_DIR / 'data' / 'archives'))
 
 # Create archive directory if it doesn't exist
 Path(ARCHIVE_DIR).mkdir(parents=True, exist_ok=True)
@@ -223,7 +227,7 @@ CLEANUP_AFTER_UPLOAD = os.getenv('CLEANUP_AFTER_UPLOAD', 'False').lower() == 'tr
 # =============================================================================
 
 # Import the logging configuration
-from receiver.utils.logging_config import get_logging_config
+from receiver.utils.logging import get_logging_config
 LOGGING = get_logging_config()
 
 # =============================================================================
@@ -231,13 +235,13 @@ LOGGING = get_logging_config()
 # =============================================================================
 
 REST_FRAMEWORK = {
-    # Use orjson for better performance
+    # Use Django REST Framework default renderers/parsers
     'DEFAULT_RENDERER_CLASSES': [
-        'receiver.utils.renderers.ORJSONRenderer',
+        'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',
     ],
     'DEFAULT_PARSER_CLASSES': [
-        'receiver.utils.parsers.ORJSONParser',
+        'rest_framework.parsers.JSONParser',
         'rest_framework.parsers.FormParser',
         'rest_framework.parsers.MultiPartParser',
     ],
@@ -262,23 +266,11 @@ REST_FRAMEWORK = {
 # Django Channels Settings (WebSocket Support)
 # =============================================================================
 
-# Use in-memory channel layer for development (no Redis required)
-# For production, use Redis backend for better performance and scalability
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels.layers.InMemoryChannelLayer'
     },
 }
-
-# Production Redis configuration (commented out by default)
-# CHANNEL_LAYERS = {
-#     'default': {
-#         'BACKEND': 'channels_redis.core.RedisChannelLayer',
-#         'CONFIG': {
-#             "hosts": [os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')],
-#         },
-#     },
-# }
 
 # =============================================================================
 # ITH API Configuration

@@ -1,6 +1,14 @@
 """
 Dependency Injection Container
-Centralized configuration for all service dependencies.
+
+Centralized configuration for all service dependencies using dependency-injector.
+Manages singleton instances and dependency wiring for the entire application.
+
+Design:
+- Services are singletons (one instance per application)
+- Dependencies injected via constructor
+- Lazy initialization (created on first use)
+- Thread-safe singleton management
 """
 from dependency_injector import containers, providers
 from django.conf import settings
@@ -9,49 +17,86 @@ from django.conf import settings
 class Container(containers.DeclarativeContainer):
     """
     Main DI Container for the receiver application.
-    Manages all service dependencies and their life cycles.
+
+    Manages lifecycle and dependencies for:
+    - Services (API clients, config, query, upload, coordination)
+    - Controllers (PHI, storage, DICOM)
+    - Query handlers
     """
 
+    # Configuration providers
     config = providers.Configuration()
 
+    # ============================================================================
+    # PHI Services (controllers/phi/)
+    # ============================================================================
+
     phi_anonymizer = providers.Singleton(
-        'receiver.controllers.phi_anonymizer.PHIAnonymizer'
+        'receiver.controllers.phi.PHIAnonymizer'
     )
 
+    phi_resolver = providers.Singleton(
+        'receiver.controllers.phi.PHIResolver'
+    )
+
+    # ============================================================================
+    # API Services (services/api/)
+    # ============================================================================
+
     ith_api_client = providers.Singleton(
-        'receiver.services.ith_api_client.IthAPIClient',
+        'receiver.services.api.IthAPIClient',
         base_url=config.ith_url,
         proxy_key=config.ith_token
     )
 
-    phi_resolver = providers.Singleton(
-        'receiver.controllers.phi_resolver.PHIResolver'
-    )
-
-    storage_manager = providers.Singleton(
-        'receiver.controllers.storage_manager.StorageManager',
-        storage_dir=config.storage_dir
-    )
-
-    study_monitor = providers.Singleton(
-        'receiver.controllers.dicom.study_monitor.StudyMonitor',
-        timeout=config.study_timeout
-    )
+    # ============================================================================
+    # Config Services (services/config/)
+    # ============================================================================
 
     proxy_config_service = providers.Singleton(
-        'receiver.services.proxy_config_service.ProxyConfigService',
+        'receiver.services.config.ProxyConfigService',
         api_client=ith_api_client
     )
 
+    # ============================================================================
+    # Query Services (services/query/)
+    # ============================================================================
+
     api_query_service = providers.Singleton(
-        'receiver.services.api_query_service.APIQueryService',
+        'receiver.services.query.APIQueryService',
         api_client=ith_api_client,
         resolver=phi_resolver
     )
 
+    # ============================================================================
+    # Coordination Services (services/coordination/)
+    # ============================================================================
+
     dispatch_lock_manager = providers.Singleton(
-        'receiver.services.dispatch_lock_manager.DispatchLockManager'
+        'receiver.services.coordination.DispatchLockManager'
     )
+
+    # ============================================================================
+    # Storage Controller (controllers/)
+    # ============================================================================
+
+    storage_manager = providers.Singleton(
+        'receiver.controllers.StorageManager',
+        storage_dir=config.storage_dir
+    )
+
+    # ============================================================================
+    # DICOM Controller (controllers/dicom/)
+    # ============================================================================
+
+    study_monitor = providers.Singleton(
+        'receiver.controllers.dicom.StudyMonitor',
+        timeout=config.study_timeout
+    )
+
+    # ============================================================================
+    # Query Handlers (controllers/dicom/query_handlers/)
+    # ============================================================================
 
     patient_query_handler = providers.Singleton(
         'receiver.controllers.dicom.query_handlers.PatientQueryHandler',
@@ -81,6 +126,7 @@ class Container(containers.DeclarativeContainer):
         api_query_service=api_query_service
     )
 
+    # Query handlers dictionary for C-FIND
     query_handlers = providers.Dict(
         PATIENT=patient_query_handler,
         STUDY=study_query_handler,
@@ -88,8 +134,12 @@ class Container(containers.DeclarativeContainer):
         IMAGE=image_query_handler
     )
 
+    # ============================================================================
+    # DICOM Service Provider (controllers/dicom/)
+    # ============================================================================
+
     dicom_service_provider = providers.Singleton(
-        'receiver.controllers.dicom.dicom_scp.DicomServiceProvider',
+        'receiver.controllers.dicom.DicomServiceProvider',
         storage_manager=storage_manager,
         study_monitor=study_monitor,
         anonymizer=phi_anonymizer,
@@ -105,8 +155,11 @@ def setup_container() -> Container:
     """
     Setup and configure the DI container with Django settings.
 
+    Loads configuration from Django settings and initializes the container.
+    Called once during application startup (in apps.py).
+
     Returns:
-        Configured Container instance
+        Configured Container instance with all settings loaded
     """
     container = Container()
 
@@ -122,6 +175,7 @@ def setup_container() -> Container:
     container.config.ith_token.from_value(
         getattr(settings, 'ITH_TOKEN', '')
     )
+
     container.config.proxy_config_dir.from_value(
         getattr(settings, 'PROXY_CONFIG_DIR', None)
     )

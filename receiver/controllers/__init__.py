@@ -1,8 +1,7 @@
 # Controllers package
 
-# PHI Management
-from .phi_anonymizer import PHIAnonymizer
-from .phi_resolver import PHIResolver
+# PHI Management (backward compatibility - import from new phi module)
+from .phi import PHIAnonymizer, PHIResolver, PatientMappingService
 
 # Storage
 from .storage_manager import StorageManager
@@ -23,6 +22,7 @@ __all__ = [
     # PHI
     'PHIAnonymizer',
     'PHIResolver',
+    'PatientMappingService',
     # Storage
     'StorageManager',
     # DICOM

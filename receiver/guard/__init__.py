@@ -1,8 +1,9 @@
 """
 Guard Module - Authentication and Authorization
+
 Handles JWT authentication and permission checking for API endpoints.
 """
-from .authentication import BackendTokenAuthentication
+from .authentication import BackendTokenAuthentication, ProxyUser
 from .permissions import (
     IsAuthenticated,
     IsAuthenticatedOrReadOnly,
@@ -14,7 +15,10 @@ from .permissions import (
 )
 
 __all__ = [
+    # Authentication
     'BackendTokenAuthentication',
+    'ProxyUser',
+    # Permissions
     'IsAuthenticated',
     'IsAuthenticatedOrReadOnly',
     'IsSuperuser',

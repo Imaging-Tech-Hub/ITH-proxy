@@ -37,7 +37,6 @@ class PatientQueryHandler:
         """
         logger.info("👥 Processing PATIENT level C-FIND - Querying API")
 
-        # Always query from API
         if not self.api_query_service:
             logger.error("API query service not available")
             yield 0x0000, None

@@ -30,8 +30,7 @@ from django.conf import settings
 
 if TYPE_CHECKING:
     from receiver.controllers.storage_manager import StorageManager
-    from receiver.controllers.phi_anonymizer import PHIAnonymizer
-    from receiver.controllers.phi_resolver import PHIResolver
+    from receiver.controllers.phi import PHIAnonymizer, PHIResolver
     from .study_monitor import StudyMonitor
 
 logger = logging.getLogger('receiver.dicom_scp')
@@ -93,8 +92,10 @@ class DicomServiceProvider:
         self.query_handlers = query_handlers
 
         self.port = port or getattr(settings, 'DICOM_PORT', 11112)
-        self.ae_title = (ae_title or getattr(settings, 'DICOM_AE_TITLE', 'DICOMRCV')).encode()
-        self.bind_address = bind_address or getattr(settings, 'DICOM_BIND_ADDRESS', '')
+        self.ae_title = ae_title or getattr(settings, 'DICOM_AE_TITLE', 'DICOMRCV')
+        # Strip whitespace from bind address and treat empty/whitespace-only as empty string
+        bind_addr = (bind_address or getattr(settings, 'DICOM_BIND_ADDRESS', '')).strip()
+        self.bind_address = bind_addr if bind_addr else ''
 
         self.is_running: bool = False
         self.server_thread: Optional[threading.Thread] = None
@@ -105,8 +106,8 @@ class DicomServiceProvider:
         self._completed_studies: set = set()
 
         from .handlers import StoreHandler, FindHandler, MoveHandler, GetHandler
-        from receiver.services.proxy_config_service import get_config_service
-        from receiver.services.api_query_service import get_api_query_service
+        from receiver.services.config import get_config_service
+        from receiver.services.query import get_api_query_service
 
         config_service = get_config_service()
 
@@ -147,7 +148,6 @@ class DicomServiceProvider:
                 logger.error(f"Study not found in database: {study_uid}")
                 return
 
-            # Archive and upload the study to backend
             self._archive_and_upload_study(study_uid, study, stats)
 
         finally:
@@ -157,6 +157,7 @@ class DicomServiceProvider:
     def _archive_and_upload_study(self, study_uid: str, study, stats) -> None:
         """
         Create ZIP archive and upload study to ITH API.
+        Now uses storage.ArchiveService for archiving operations.
 
         Args:
             study_uid: Study Instance UID
@@ -165,12 +166,9 @@ class DicomServiceProvider:
         """
         try:
             from pathlib import Path
-            from receiver.utils.study_archiver import StudyArchiver
-            from receiver.services.study_uploader import get_study_uploader
-            from django.conf import settings
+            from receiver.services.upload import get_study_uploader
 
-            archive_dir = getattr(settings, 'ARCHIVE_DIR', 'archives')
-            archiver = StudyArchiver(archive_dir)
+            archive_service = self.storage_manager.archive_service
 
             study_path = Path(study.storage_path)
             if not study_path.exists():
@@ -180,7 +178,7 @@ class DicomServiceProvider:
             archive_name = f"{study.patient_id}_{study_uid}"
 
             logger.info(f"Creating archive for study: {study_uid}")
-            zip_path = archiver.create_study_archive(study_path, archive_name)
+            zip_path = archive_service.create_study_archive(study_path, archive_name)
 
             if not zip_path:
                 logger.error(f"Failed to create archive for study: {study_uid}")
@@ -189,7 +187,7 @@ class DicomServiceProvider:
             uploader = get_study_uploader()
             if not uploader:
                 logger.error("Study uploader not available")
-                archiver.cleanup_archive(zip_path)
+                archive_service.cleanup_archive(zip_path)
                 return
 
             study_info = {
@@ -208,37 +206,34 @@ class DicomServiceProvider:
             success, response_data = uploader.upload_study(zip_path, study_info)
 
             if success:
-                logger.info(f" Study uploaded successfully: {study_uid}")
+                logger.info(f"Study uploaded successfully: {study_uid}")
 
                 if uploader.cleanup_after_upload:
                     logger.info(f"Cleaning up files for study: {study_uid}")
-                    archiver.cleanup_archive(zip_path)
-                    archiver.cleanup_study_directory(study_path)
-                    logger.info(f" Cleanup completed for study: {study_uid}")
+                    archive_service.cleanup_archive(zip_path)
+                    archive_service.cleanup_study_directory(study_path)
+                    logger.info(f"Cleanup completed for study: {study_uid}")
                 else:
                     logger.info(f"Keeping source DICOM files (CLEANUP_AFTER_UPLOAD=False)")
-                    archiver.cleanup_archive(zip_path)
+                    archive_service.cleanup_archive(zip_path)
             else:
-                logger.error(f" Failed to upload study after all retries: {study_uid}")
+                logger.error(f"Failed to upload study after all retries: {study_uid}")
 
                 if uploader.cleanup_after_upload:
                     logger.warning(f"Upload failed - cleaning up files and database records (CLEANUP_AFTER_UPLOAD=True)")
 
-                    # Delete archive file
-                    archiver.cleanup_archive(zip_path)
+                    archive_service.cleanup_archive(zip_path)
 
-                    # Delete database records (Session.delete() also removes storage_path and PHI if needed)
                     try:
                         if study:
                             logger.info(f"Deleting database record for failed upload: {study_uid}")
-                            study.delete()  # This will also delete storage directory and orphaned PHI mappings
-                            logger.info(f"✅ Database cleanup completed for study: {study_uid}")
+                            study.delete()
+                            logger.info(f"Database cleanup completed for study: {study_uid}")
                     except Exception as e:
                         logger.error(f"Error deleting database record: {e}", exc_info=True)
-                        # If DB deletion fails, still try to clean up files
-                        archiver.cleanup_study_directory(study_path)
+                        archive_service.cleanup_study_directory(study_path)
 
-                    logger.info(f" Cleanup completed for failed upload: {study_uid}")
+                    logger.info(f"Cleanup completed for failed upload: {study_uid}")
                 else:
                     logger.info(f"Upload failed - keeping files for manual retry (CLEANUP_AFTER_UPLOAD=False)")
                     logger.info(f"Archive location: {zip_path}")
@@ -272,20 +267,49 @@ class DicomServiceProvider:
         try:
             self.ae = AE(ae_title=self.ae_title)
 
-            for sop_class in self.SUPPORTED_SOP_CLASSES:
+            self.ae.maximum_pdu_size = getattr(settings, 'DICOM_MAX_PDU_SIZE', 16384)
+            self.ae.acse_timeout = getattr(settings, 'DICOM_ACSE_TIMEOUT', 30)
+            self.ae.dimse_timeout = getattr(settings, 'DICOM_DIMSE_TIMEOUT', 60)
+            self.ae.network_timeout = getattr(settings, 'DICOM_NETWORK_TIMEOUT', 60)
+
+            for context in StoragePresentationContexts:
                 self.ae.add_supported_context(
-                    sop_class,
+                    context.abstract_syntax,
+                    scu_role=True,
+                    scp_role=True,
                     transfer_syntax=[ImplicitVRLittleEndian, ExplicitVRLittleEndian]
+                )
+
+            for context in StoragePresentationContexts:
+                self.ae.add_supported_context(
+                    context.abstract_syntax,
+                    transfer_syntax=[ImplicitVRLittleEndian]
                 )
 
             self.ae.add_supported_context(StudyRootQueryRetrieveInformationModelFind)
             self.ae.add_supported_context(PatientRootQueryRetrieveInformationModelFind)
 
-            self.ae.add_supported_context(StudyRootQueryRetrieveInformationModelMove)
-            self.ae.add_supported_context(PatientRootQueryRetrieveInformationModelMove)
+            self.ae.add_supported_context(
+                StudyRootQueryRetrieveInformationModelMove,
+                scu_role=False,
+                scp_role=True
+            )
+            self.ae.add_supported_context(
+                PatientRootQueryRetrieveInformationModelMove,
+                scu_role=False,
+                scp_role=True
+            )
 
-            self.ae.add_supported_context(StudyRootQueryRetrieveInformationModelGet)
-            self.ae.add_supported_context(PatientRootQueryRetrieveInformationModelGet)
+            self.ae.add_supported_context(
+                StudyRootQueryRetrieveInformationModelGet,
+                scu_role=True,
+                scp_role=True
+            )
+            self.ae.add_supported_context(
+                PatientRootQueryRetrieveInformationModelGet,
+                scu_role=True,
+                scp_role=True
+            )
 
             self.ae.add_supported_context(Verification)
 
@@ -305,7 +329,7 @@ class DicomServiceProvider:
 
             logger.info("=" * 60)
             logger.info(f" DICOM server running on {bind_addr}:{self.port}")
-            logger.info(f" AE Title: {self.ae_title.decode()}")
+            logger.info(f" AE Title: {self.ae_title}")
             logger.info(f" C-STORE: Enabled (receive DICOM images)")
             logger.info(f" C-FIND: Enabled (query studies)")
             logger.info(f" C-MOVE: Enabled (send to PACS nodes, requires NAT/port forwarding)")
@@ -313,10 +337,11 @@ class DicomServiceProvider:
             logger.info(f" C-ECHO: Enabled (verification)")
             logger.info(f" Supported Modalities: {', '.join(self.SUPPORTED_MODALITIES)}")
             logger.info(f" SOP Classes: {len(self.SUPPORTED_SOP_CLASSES)}")
-            logger.info(f"Study timeout: {self.study_monitor.timeout}s")
+            logger.info(f" Study timeout: {self.study_monitor.timeout}s")
+            logger.info(f" Network settings: PDU={self.ae.maximum_pdu_size}B, ACSE={self.ae.acse_timeout}s, DIMSE={self.ae.dimse_timeout}s")
             logger.info("=" * 60)
 
-            from receiver.services.access_control_service import get_access_control_service
+            from receiver.services.config import get_access_control_service
             access_control = get_access_control_service()
             if access_control:
                 access_control.log_access_status()
@@ -373,7 +398,7 @@ class DicomServiceProvider:
             dict: Server statistics
         """
         return {
-            'ae_title': self.ae_title.decode(),
+            'ae_title': self.ae_title,
             'port': self.port,
             'is_running': self.is_running,
             'active_studies': self.study_monitor.get_study_count(),

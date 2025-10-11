@@ -168,8 +168,8 @@ class StudyQueryHandler:
                         if study_info.get('NumberOfStudyRelatedInstances'):
                             response_ds.NumberOfStudyRelatedInstances = study_info['NumberOfStudyRelatedInstances']
 
-                        logger.info(f" Returning study #{response_count + 1}:")
-                        logger.info(f" Patient: {response_ds.PatientName} (ID: {response_ds.PatientID})")
+                        logger.info(f"Returning study #{response_count + 1}:")
+                        logger.info(f"Patient: {response_ds.PatientName} (ID: {response_ds.PatientID})")
                         logger.info(f"Study: {response_ds.StudyDescription or 'No Description'}")
                         logger.info(f" Date: {response_ds.StudyDate or 'Unknown'}")
                         logger.info(f"UID: {response_ds.StudyInstanceUID}")
@@ -177,16 +177,16 @@ class StudyQueryHandler:
                         response_count += 1
                         yield 0xFF00, response_ds
 
-                    logger.info(f" STUDY query completed (API) - returned {response_count} studies")
+                    logger.info(f"STUDY query completed (API) - returned {response_count} studies")
                     logger.info("=" * 60)
                     yield 0x0000, None
                     return
                 else:
-                    logger.warning(" API query returned no data")
+                    logger.warning("API query returned no data")
             except Exception as e:
-                logger.error(f" Error querying API: {e}", exc_info=True)
+                logger.error(f"Error querying API: {e}", exc_info=True)
         else:
-            logger.warning("⚠️  API query service not available - cannot query studies")
+            logger.warning("API query service not available - cannot query studies")
 
         logger.info("=" * 60)
         logger.info("STUDY query completed - 0 results (API only mode)")

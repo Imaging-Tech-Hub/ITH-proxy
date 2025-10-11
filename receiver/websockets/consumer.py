@@ -159,7 +159,7 @@ class ProxyConsumer(AsyncWebsocketConsumer):
                 logger.warning(f"Received event without event_type: {json.dumps(event)[:200]}")
                 return
 
-            logger.info(f"📨 Received event: {event_type}")
+            logger.info(f"Received event: {event_type}")
 
             handler = self.handlers.get(event_type)
 
@@ -221,7 +221,7 @@ class ProxyConsumer(AsyncWebsocketConsumer):
         Returns:
             Dict with 'valid', 'workspace_id', 'proxy_id'
         """
-        from receiver.services.proxy_config_service import get_config_service
+        from receiver.services.config import get_config_service
         from asgiref.sync import sync_to_async
 
         @sync_to_async

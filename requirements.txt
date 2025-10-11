@@ -4,8 +4,8 @@ djangorestframework>=3.14.0
 asgiref>=3.7.0
 
 # DICOM Processing
-pydicom>=3.0.0,<4.0  # Includes built-in anonymization
-pynetdicom>=2.0.0
+pydicom==2.4.4
+pynetdicom>=2.1.0
 
 # Database
 # SQLite is built into Python, no additional package needed

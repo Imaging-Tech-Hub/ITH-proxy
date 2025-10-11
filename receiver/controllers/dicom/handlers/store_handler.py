@@ -11,8 +11,8 @@ import pydicom
 
 if TYPE_CHECKING:
     from receiver.controllers.storage_manager import StorageManager
-    from receiver.controllers.phi_anonymizer import PHIAnonymizer
-    from receiver.services.proxy_config_service import ProxyConfigService
+    from receiver.controllers.phi.anonymizer import PHIAnonymizer
+    from receiver.services.config.proxy_config_service import ProxyConfigService
 
 logger = logging.getLogger('receiver.handlers.store')
 
@@ -75,12 +75,6 @@ class StoreHandler:
 
             dataset.file_meta.FileMetaInformationVersion = b'\x00\x01'
 
-            if hasattr(dataset, 'PatientName'):
-                patient_name = str(dataset.PatientName)
-                if patient_name and '^' not in patient_name:
-                    dataset.PatientName = f"{patient_name}^"
-                    logger.debug(f"Fixed PatientName format: {patient_name} -> {dataset.PatientName}")
-
         except Exception as e:
             logger.warning(f"Error fixing DICOM metadata: {e}", exc_info=True)
 
@@ -96,7 +90,7 @@ class StoreHandler:
             int: DICOM status code (0x0000 = success, 0xC000 = failure)
         """
         try:
-            from receiver.services.access_control_service import extract_calling_ae_title, extract_requester_address, get_access_control_service
+            from receiver.services.config.access_control_service import extract_calling_ae_title, extract_requester_address, get_access_control_service
             calling_ae = extract_calling_ae_title(event)
             requester_ip = extract_requester_address(event)
 

@@ -2,22 +2,19 @@
 C-MOVE Handler for DICOM operations.
 Handles C-MOVE requests to send DICOM studies to configured PACS nodes.
 """
-import logging
-from pathlib import Path
-from io import BytesIO
-from typing import Any, List, Optional, TYPE_CHECKING
-from pydicom import dcmread
+from typing import Any, Optional, TYPE_CHECKING
+
+from receiver.controllers.base import HandlerBase, DICOMStatus
+from receiver.controllers.dicom.services import DICOMDownloadService, DICOMDatasetService
 
 if TYPE_CHECKING:
     from receiver.controllers.storage_manager import StorageManager
-    from receiver.controllers.phi_resolver import PHIResolver
-    from receiver.services.proxy_config_service import ProxyConfigService
-    from receiver.services.api_query_service import APIQueryService
-
-logger = logging.getLogger('receiver.handlers.move')
+    from receiver.controllers.phi import PHIResolver
+    from receiver.services.config import ProxyConfigService
+    from receiver.services.query import APIQueryService
 
 
-class MoveHandler:
+class MoveHandler(HandlerBase):
     """
     Handler for DICOM C-MOVE operations.
     Sends DICOM files to destination AE (configured PACS nodes).
@@ -39,10 +36,13 @@ class MoveHandler:
             config_service: ProxyConfigService for node configuration
             api_query_service: APIQueryService for downloading from API
         """
+        super().__init__('move')
         self.storage_manager = storage_manager
         self.resolver = resolver
         self.config_service = config_service
         self.api_query_service = api_query_service
+        self.dataset_service = DICOMDatasetService()
+        self.download_service: Optional[DICOMDownloadService] = None
 
     def handle_move(self, event: Any):
         """
@@ -61,117 +61,112 @@ class MoveHandler:
             Destination address, dataset count, datasets, or status codes
         """
         try:
-            from receiver.services.access_control_service import extract_calling_ae_title, extract_requester_address, get_access_control_service
-            calling_ae = extract_calling_ae_title(event)
-            requester_ip = extract_requester_address(event)
+            calling_info = self.extract_calling_info(event)
 
-            access_control = get_access_control_service()
-
-            if access_control:
-                allowed, reason = access_control.can_accept_retrieve(calling_ae, requester_ip, "C-MOVE")
-                if not allowed:
-                    logger.warning(f"C-MOVE REJECTED from {calling_ae} ({requester_ip or 'unknown IP'}): {reason}")
-                    yield 0xC001
-                    return
-                logger.debug(f"C-MOVE access granted to {calling_ae} ({requester_ip or 'unknown IP'}): {reason}")
+            allowed, reason = self.check_access(event, "C-MOVE")
+            if not allowed:
+                yield DICOMStatus.ACCESS_DENIED
+                return
 
             request = event.request
+            move_destination = self._get_move_destination(request)
 
-            if hasattr(request.MoveDestination, 'decode'):
-                move_destination = request.MoveDestination.decode('utf-8').strip()
-            else:
-                move_destination = str(request.MoveDestination).strip()
-
-            if access_control:
-                allowed, reason = access_control.can_send_to_node(move_destination)
-                if not allowed:
-                    logger.warning(f"C-MOVE to {move_destination} REJECTED: {reason}")
-                    yield 0xA801
-                    return
-                logger.debug(f"C-MOVE to {move_destination} allowed: {reason}")
-
-            logger.info("=" * 60)
-            logger.info(" C-MOVE REQUEST RECEIVED")
-            logger.info(f" From: {calling_ae}")
-            logger.info(f" Move Destination AE: {move_destination}")
-
-            identifier = request.Identifier
-            query_level = getattr(identifier, 'QueryRetrieveLevel', 'STUDY')
-            logger.info(f" Query Level: {query_level}")
-
-            self._log_query_parameters(identifier)
-
-            study_uid = self._extract_study_uid(identifier)
-            if not study_uid and query_level == 'STUDY':
-                logger.error(" No StudyInstanceUID provided for STUDY level C-MOVE")
-                yield 0xA900 
+            allowed, reason = self._check_destination_access(move_destination)
+            if not allowed:
+                self.logger.warning(f"C-MOVE to {move_destination} REJECTED: {reason}")
+                yield DICOMStatus.MOVE_DESTINATION_UNKNOWN
                 return
+
+            self.log_operation_start("C-MOVE", calling_info)
+            self.logger.info(f"Move Destination AE: {move_destination}")
+
+            identifier = self.decode_identifier(request.Identifier)
+            query_level = self.get_query_level(identifier)
+            study_uid = self.extract_uid(identifier, 'StudyInstanceUID')
+
+            if not study_uid and query_level == 'STUDY':
+                self.logger.error("No StudyInstanceUID provided for STUDY level C-MOVE")
+                yield DICOMStatus.IDENTIFIER_DOES_NOT_MATCH_SOP_CLASS
+                return
+
+            self.log_query_parameters(identifier)
 
             destination_ip, destination_port = self._get_destination_address(move_destination)
             if not destination_ip:
-                logger.error(f" No configuration found for destination AE: {move_destination}")
-                yield 0xA801
+                self.logger.error(f"No configuration found for destination AE: {move_destination}")
+                yield DICOMStatus.MOVE_DESTINATION_UNKNOWN
                 return
 
-            logger.info(f" Destination: {destination_ip}:{destination_port}")
+            self.logger.info(f"Destination: {destination_ip}:{destination_port}")
 
             datasets = self._find_datasets(identifier, query_level, study_uid)
 
             if not datasets:
-                logger.warning(" No matching files found for C-MOVE request")
-                yield 0xA701 
+                self.logger.warning("No matching files found for C-MOVE request")
+                yield DICOMStatus.OUT_OF_RESOURCES_SUB_OPERATIONS
                 return
 
             total_datasets = len(datasets)
-            logger.info(f" Found {total_datasets} datasets to move")
-            logger.info(f" Initiating C-MOVE to {move_destination}")
+            self.logger.info(f"Found {total_datasets} datasets to move")
+            self.logger.info(f"Initiating C-MOVE to {move_destination}")
 
             yield (destination_ip, destination_port)
 
             yield total_datasets
 
-            sent_count = 0
-            for dataset in datasets:
-                try:
-                    dataset = self.resolver.resolve_dataset(dataset)
+            sent_count, failed_count = self._send_datasets(event, datasets, total_datasets)
 
-                    sent_count += 1
-                    logger.info(f" Sending dataset {sent_count}/{total_datasets}")
-                    logger.info(f"Patient: {getattr(dataset, 'PatientName', 'Unknown')}")
-                    logger.info(f"Study: {getattr(dataset, 'StudyInstanceUID', 'Unknown')}")
+            final_status = self.get_status_for_results(total_datasets, sent_count, failed_count)
+            self.logger.info(f"C-MOVE completed: {sent_count}/{total_datasets} sent, {failed_count} failed")
+            yield final_status
 
-                    yield 0xFF00, dataset
-
-                except Exception as e:
-                    logger.error(f" Error processing dataset: {e}", exc_info=True)
-                    yield 0xB000 
-
-            logger.info(f" C-MOVE completed: {sent_count}/{total_datasets} datasets sent")
-            logger.info("=" * 60)
-            yield 0x0000 
+            self.log_operation_complete("C-MOVE", failed_count == 0,
+                                       f"{sent_count}/{total_datasets} datasets sent")
 
         except Exception as e:
-            logger.error(f" Error in C-MOVE handler: {e}", exc_info=True)
-            yield 0xA701 
+            self.logger.error(f"Error in C-MOVE handler: {e}", exc_info=True)
+            yield DICOMStatus.OUT_OF_RESOURCES_SUB_OPERATIONS
 
-    def _log_query_parameters(self, identifier: Any) -> None:
-        """Log query parameters from identifier."""
-        logger.info(" Query Parameters:")
-        for elem in identifier:
-            if elem.value is not None:
-                if isinstance(elem.value, (str, int, float)):
-                    value_str = str(elem.value)
-                    display_value = value_str[:100] + "..." if len(value_str) > 100 else value_str
-                else:
-                    display_value = f"<{type(elem.value).__name__}>"
-                logger.info(f"{elem.keyword}: {display_value}")
+    def _get_move_destination(self, request: Any) -> str:
+        """
+        Extract move destination AE title from request.
 
-    def _extract_study_uid(self, identifier: Any) -> Optional[str]:
-        """Extract StudyInstanceUID from identifier."""
-        for elem in identifier:
-            if elem.keyword == 'StudyInstanceUID' and elem.value:
-                return str(elem.value).strip()
-        return None
+        Args:
+            request: C-MOVE request
+
+        Returns:
+            Move destination AE title
+        """
+        if hasattr(request.MoveDestination, 'decode'):
+            return request.MoveDestination.decode('utf-8').strip()
+        else:
+            return str(request.MoveDestination).strip()
+
+    def _check_destination_access(self, ae_title: str) -> tuple:
+        """
+        Check if C-MOVE to destination is allowed.
+
+        Args:
+            ae_title: Destination AE title
+
+        Returns:
+            Tuple of (allowed, reason)
+        """
+        try:
+            from receiver.services.config import get_access_control_service
+
+            access_control = get_access_control_service()
+            if not access_control:
+                return True, "No access control configured"
+
+            allowed, reason = access_control.can_send_to_node(ae_title)
+            if allowed:
+                self.logger.debug(f"C-MOVE to {ae_title} allowed: {reason}")
+            return allowed, reason
+
+        except Exception as e:
+            self.logger.error(f"Error checking destination access: {e}", exc_info=True)
+            return False, f"Access control error: {str(e)}"
 
     def _get_destination_address(self, ae_title: str) -> tuple:
         """
@@ -190,23 +185,23 @@ class MoveHandler:
             for node in nodes:
                 if node.ae_title.upper().strip() == ae_title.upper().strip():
                     if not node.is_active:
-                        logger.warning(f"Node {node.name} ({ae_title}) is inactive")
+                        self.logger.warning(f"Node {node.name} ({ae_title}) is inactive")
                         continue
 
                     if not node.is_reachable:
-                        logger.warning(f"Node {node.name} ({ae_title}) is not reachable")
+                        self.logger.warning(f"Node {node.name} ({ae_title}) is not reachable")
                         continue
 
-                    logger.info(f" Found node: {node.name} ({ae_title})")
-                    logger.info(f"Address: {node.host}:{node.port}")
-                    logger.info(f"Permission: {node.permission}")
+                    self.logger.info(f"Found node: {node.name} ({ae_title})")
+                    self.logger.info(f"Address: {node.host}:{node.port}")
+                    self.logger.info(f"Permission: {node.permission}")
                     return (node.host, node.port)
 
-            logger.warning(f" No active/reachable node found for AE title: {ae_title}")
+            self.logger.warning(f"No active/reachable node found for AE title: {ae_title}")
             return (None, None)
 
         except Exception as e:
-            logger.error(f"Error getting destination address: {e}", exc_info=True)
+            self.logger.error(f"Error getting destination address: {e}", exc_info=True)
             return (None, None)
 
     def _find_datasets(
@@ -214,11 +209,10 @@ class MoveHandler:
         identifier: Any,
         query_level: str,
         study_uid: Optional[str]
-    ) -> List[Any]:
+    ) -> list:
         """
         Find datasets matching the query.
         Always downloads from API to get the latest/processed version.
-        Local files are cleaned up after upload, and API has the authoritative data.
 
         Args:
             identifier: Query identifier
@@ -228,99 +222,110 @@ class MoveHandler:
         Returns:
             List of DICOM datasets
         """
-        datasets = []
+        if not self.api_query_service:
+            self.logger.error("No API access configured - cannot perform C-MOVE")
+            return []
 
-        if self.api_query_service:
-            logger.info(" Downloading from ITH API (latest version)...")
-            api_datasets = self._download_from_api(query_level, study_uid, identifier)
+        if not self.download_service:
+            from receiver.containers import container
+            from receiver.services.coordination import get_dispatch_lock_manager
 
-            if api_datasets:
-                logger.info(f" Downloaded {len(api_datasets)} datasets from API")
-                return api_datasets
+            api_client = container.ith_api_client()
+            lock_manager = get_dispatch_lock_manager()
+
+            self.download_service = DICOMDownloadService(
+                api_client=api_client,
+                resolver=self.resolver,
+                lock_manager=lock_manager
+            )
+
+        self.logger.info("Downloading from ITH API (latest version)...")
+
+
+        def no_op_prepare(ds, ts):
+            pass
+
+        if query_level == 'STUDY' and study_uid:
+            datasets = self.download_service.download_study(
+                study_uid=study_uid,
+                transfer_syntax='',
+                prepare_dataset_func=no_op_prepare
+            )
+        elif query_level == 'SERIES':
+            series_uid = self.extract_uid(identifier, 'SeriesInstanceUID')
+            if study_uid and series_uid:
+                datasets = self.download_service.download_series(
+                    study_uid=study_uid,
+                    series_uid=series_uid,
+                    transfer_syntax='',
+                    prepare_dataset_func=no_op_prepare
+                )
             else:
-                logger.warning(f"No data found in API")
+                self.logger.error("Missing UIDs for SERIES level query")
+                datasets = []
+        elif query_level == 'IMAGE':
+            series_uid = self.extract_uid(identifier, 'SeriesInstanceUID')
+            sop_uid = self.extract_uid(identifier, 'SOPInstanceUID')
+            if study_uid and series_uid and sop_uid:
+                datasets = self.download_service.download_image(
+                    study_uid=study_uid,
+                    series_uid=series_uid,
+                    sop_uid=sop_uid,
+                    transfer_syntax='',
+                    prepare_dataset_func=no_op_prepare
+                )
+            else:
+                self.logger.error("Missing UIDs for IMAGE level query")
+                datasets = []
         else:
-            logger.error(" No API access configured - cannot perform C-MOVE")
+            self.logger.warning(f"Unsupported query level: {query_level}")
+            datasets = []
+
+        if datasets:
+            self.logger.info(f"Downloaded {len(datasets)} datasets from API")
+        else:
+            self.logger.warning("No data found in API")
 
         return datasets
 
-    def _download_from_api(
-        self,
-        query_level: str,
-        study_uid: Optional[str],
-        identifier: Any
-    ) -> List[Any]:
+    def _send_datasets(self, event: Any, datasets: list, total_datasets: int) -> tuple:
         """
-        Download datasets from ITH API with duplicate download prevention.
+        Send datasets with PHI resolved.
 
         Args:
-            query_level: Query level
-            study_uid: Study Instance UID
-            identifier: Query identifier
+            event: pynetdicom event
+            datasets: List of datasets to send
+            total_datasets: Total number of datasets
 
         Returns:
-            List of DICOM datasets
+            Tuple of (sent_count, failed_count)
         """
-        datasets = []
+        sent_count = 0
+        failed_count = 0
 
-        try:
+        for dataset in datasets:
+            if event.is_cancelled:
+                self.logger.warning(f"C-MOVE cancelled by client after {sent_count} datasets")
+                yield DICOMStatus.CANCEL
+                return sent_count, failed_count
 
-            if query_level == 'STUDY' and study_uid:
-                from receiver.containers import container
-                from receiver.services.dispatch_lock_manager import get_dispatch_lock_manager
+            try:
+                dataset = self.resolver.resolve_dataset(dataset)
 
-                api_client = container.ith_api_client()
-                lock_manager = get_dispatch_lock_manager()
+                sent_count += 1
+                self.logger.info(f"Sending dataset {sent_count}/{total_datasets}")
+                self.logger.debug(f"Patient: {getattr(dataset, 'PatientName', 'Unknown')}")
+                self.logger.debug(f"Study: {getattr(dataset, 'StudyInstanceUID', 'Unknown')}")
 
-                sessions_response = api_client.list_sessions()
-                sessions = sessions_response.get('sessions', [])
+                yield DICOMStatus.PENDING, dataset
 
-                for session in sessions:
-                    metadata = session.get('metadata', {})
-                    if metadata.get('study_instance_uid') == study_uid:
-                        session_id = session.get('id')
-                        subject_id = session.get('subject_id')
+            except Exception as e:
+                failed_count += 1
+                self.logger.error(f"Error processing dataset: {e}", exc_info=True)
+                yield DICOMStatus.SUB_OPERATIONS_COMPLETE_WITH_FAILURES
 
-                        if session_id and subject_id:
-                            lock_key_node = 'api_download'
-                            lock_acquired = lock_manager.acquire_lock(lock_key_node, 'c-move', study_uid)
+        return sent_count, failed_count
 
-                            if not lock_acquired:
-                                logger.warning(f"🔒 Download already in progress for study {study_uid}, waiting...")
-                                import time
-                                time.sleep(0.5)
-
-                            try:
-                                import tempfile
-                                with tempfile.TemporaryDirectory() as temp_dir:
-                                    temp_path = Path(temp_dir) / f"{session_id}.zip"
-
-                                    logger.info(f" Downloading session {session_id} from API...")
-                                    api_client.download_session(
-                                        session_id=session_id,
-                                        subject_id=subject_id,
-                                        output_path=temp_path
-                                    )
-
-                                    import zipfile
-                                    extract_dir = Path(temp_dir) / "extracted"
-                                    with zipfile.ZipFile(temp_path, 'r') as zip_ref:
-                                        zip_ref.extractall(extract_dir)
-
-                                    for dcm_file in extract_dir.rglob('*.dcm'):
-                                        try:
-                                            ds = dcmread(str(dcm_file))
-                                            datasets.append(ds)
-                                        except Exception as e:
-                                            logger.warning(f"Error reading {dcm_file}: {e}")
-
-                            finally:
-                                if lock_acquired:
-                                    lock_manager.release_lock(lock_key_node, 'c-move', study_uid)
-
-                        break
-
-        except Exception as e:
-            logger.error(f"Error downloading from API: {e}", exc_info=True)
-
-        return datasets
+    def handle(self, event: Any):
+        """Main handler method (delegates to handle_move for C-MOVE operations)."""
+        return self.handle_move(event)

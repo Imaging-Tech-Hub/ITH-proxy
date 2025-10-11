@@ -1,87 +1,70 @@
 """
 Storage Manager Module
-Handles DICOM file storage and study organization.
-Thread-safe operations for concurrent file storage.
-Instance metadata is stored in XML files for performance.
+Facade for DICOM file storage and study organization.
+Delegates to specialized services for file operations, study lifecycle, and archiving.
 """
 import logging
-import os
-import threading
 from pathlib import Path
 from typing import Dict, Optional, Any, List
 from pydicom import Dataset
-from django.utils import timezone
 from django.conf import settings
-from receiver.models import Session, Scan
-from receiver.utils.instance_metadata import InstanceMetadataHandler
+
+from .storage import FileManager, StudyService, ArchiveService
 
 logger = logging.getLogger(__name__)
 
 
 class StorageManager:
     """
-    Manages DICOM file storage and study/series organization.
-    Provides thread-safe file operations and study lifecycle management.
+    Facade for DICOM file storage and study management.
+
+    Delegates operations to specialized services:
+    - FileManager: File system operations and path management
+    - StudyService: Study and series lifecycle management
+    - ArchiveService: Study archiving and cleanup
     """
 
     def __init__(self, storage_dir: Optional[str] = None) -> None:
+        """
+        Initialize storage manager and underlying services.
+
+        Args:
+            storage_dir: Base directory for DICOM storage
+        """
         self.storage_dir: Path = Path(storage_dir or getattr(settings, 'DICOM_STORAGE_DIR', 'storage'))
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
-        self._lock: threading.Lock = threading.Lock()
-        self._study_timers: Dict[str, Any] = {}
-        self.instance_metadata_handler: InstanceMetadataHandler = InstanceMetadataHandler()
+
+        self.file_manager = FileManager(self.storage_dir)
+        self.study_service = StudyService()
+        self.archive_service = ArchiveService(archive_dir=getattr(settings, 'ARCHIVE_DIR', str(Path('data') / 'archives')))
 
     def _sanitize_uid(self, uid: str) -> str:
         """Sanitize UID for use in filesystem paths."""
-        sanitized = uid.replace('.', '_').replace('/', '_').replace('\\', '_')
-
-        if '..' in sanitized:
-            logger.warning(f"Suspicious UID detected: {uid}")
-            sanitized = sanitized.replace('..', '_')
-
-        if len(sanitized) > 255:
-            logger.warning(f"UID too long ({len(sanitized)} chars), truncating")
-            sanitized = sanitized[:255]
-
-        return sanitized
+        return self.file_manager.sanitize_uid(uid)
 
     def _sanitize_patient_id(self, patient_id: str) -> str:
         """Sanitize patient ID for safe directory names."""
-        sanitized = "".join(c for c in patient_id if c.isalnum() or c in "._- ").strip()
-        if not sanitized:
-            sanitized = "unknown"
-
-        if '..' in sanitized or '/' in sanitized or '\\' in sanitized:
-            logger.warning(f"Suspicious patient_id detected: {patient_id}, using 'unknown'")
-            sanitized = "unknown"
-
-        if len(sanitized) > 255:
-            logger.warning(f"Patient ID too long ({len(sanitized)} chars), truncating")
-            sanitized = sanitized[:255]
-
-        return sanitized
+        return self.file_manager.sanitize_patient_id(patient_id)
 
     def _get_patient_path(self, patient_id: str) -> Path:
         """Get storage path for a patient."""
-        sanitized_patient_id = self._sanitize_patient_id(patient_id)
-        return self.storage_dir / sanitized_patient_id
+        return self.file_manager.get_patient_path(patient_id)
 
     def _get_study_path(self, patient_id: str, study_instance_uid: str) -> Path:
         """Get storage path for a study."""
-        patient_path = self._get_patient_path(patient_id)
-        sanitized_uid = self._sanitize_uid(study_instance_uid)
-        return patient_path / sanitized_uid
+        return self.file_manager.get_study_path(patient_id, study_instance_uid)
 
     def _get_series_path(self, patient_id: str, study_instance_uid: str, series_instance_uid: str) -> Path:
         """Get storage path for a series."""
-        study_path = self._get_study_path(patient_id, study_instance_uid)
-        sanitized_series_uid = self._sanitize_uid(series_instance_uid)
-        return study_path / sanitized_series_uid
+        return self.file_manager.get_series_path(patient_id, study_instance_uid, series_instance_uid)
 
     def store_dicom_file(self, dataset: Dataset, filename: str) -> Dict[str, Any]:
         """
         Store a DICOM file and update database records.
         Instance metadata is stored in XML file for performance.
+
+        Delegates to:
+        - StudyService: Study and series creation/updates
+        - FileManager: Directory creation and file storage
 
         Args:
             dataset: pydicom Dataset object
@@ -90,87 +73,56 @@ class StorageManager:
         Returns:
             Dict containing study and series objects
         """
-        with self._lock:
-            study_uid = dataset.StudyInstanceUID
-            series_uid = dataset.SeriesInstanceUID
-            sop_uid = dataset.SOPInstanceUID
+        study_uid = dataset.StudyInstanceUID
+        series_uid = dataset.SeriesInstanceUID
+        sop_uid = dataset.SOPInstanceUID
 
-            patient_name = getattr(dataset, 'PatientName', 'UNKNOWN')
-            patient_id = getattr(dataset, 'PatientID', 'UNKNOWN')
+        patient_name = getattr(dataset, 'PatientName', 'UNKNOWN')
+        patient_id = getattr(dataset, 'PatientID', 'UNKNOWN')
 
-            study, study_created = Session.objects.get_or_create(
-                study_instance_uid=study_uid,
-                defaults={
-                    'patient_name': str(patient_name),
-                    'patient_id': str(patient_id),
-                    'study_date': getattr(dataset, 'StudyDate', None),
-                    'study_time': getattr(dataset, 'StudyTime', None),
-                    'study_description': getattr(dataset, 'StudyDescription', ''),
-                    'accession_number': getattr(dataset, 'AccessionNumber', ''),
-                    'storage_path': str(self._get_study_path(str(patient_id), study_uid)),
-                    'status': 'incomplete',
-                }
-            )
+        study_path = str(self._get_study_path(str(patient_id), study_uid))
+        study, study_created = self.study_service.get_or_create_study(
+            study_uid=study_uid,
+            patient_name=str(patient_name),
+            patient_id=str(patient_id),
+            storage_path=study_path,
+            dataset=dataset
+        )
 
-            if not study_created:
-                study.last_received_at = timezone.now()
-                study.save(update_fields=['last_received_at'])
+        series_path = self._get_series_path(str(patient_id), study_uid, series_uid)
+        series, series_created = self.study_service.get_or_create_series(
+            series_uid=series_uid,
+            study=study,
+            storage_path=str(series_path),
+            dataset=dataset
+        )
 
-            series, series_created = Scan.objects.get_or_create(
-                series_instance_uid=series_uid,
-                defaults={
-                    'session': study,
-                    'series_number': getattr(dataset, 'SeriesNumber', None),
-                    'series_description': getattr(dataset, 'SeriesDescription', ''),
-                    'modality': getattr(dataset, 'Modality', ''),
-                    'storage_path': str(self._get_series_path(str(patient_id), study_uid, series_uid)),
-                    'instances_count': 0,
-                }
-            )
+        self.file_manager.ensure_directory_exists(series_path)
 
-            series_path = Path(series.storage_path)
-            series_path.mkdir(parents=True, exist_ok=True)
+        file_path = series_path / filename
+        success = self.file_manager.save_dicom_file(dataset, file_path)
 
-            file_path = series_path / filename
+        if not success:
+            logger.error(f"Failed to save DICOM file: {file_path}")
 
-            if file_path.exists():
-                logger.warning(f"Duplicate instance detected, overwriting: {filename}")
+        file_size = self.file_manager.get_file_size(file_path) or 0
 
-            dataset.save_as(str(file_path), enforce_file_format=True)
+        self.study_service.add_instance_to_series(
+            series=series,
+            sop_instance_uid=sop_uid,
+            filename=filename,
+            file_size=file_size,
+            dataset=dataset
+        )
 
-            file_size = os.path.getsize(file_path)
+        return {
+            'study': study,
+            'series': series,
+        }
 
-            xml_path = series.get_instances_xml_path()
-            instance_number = getattr(dataset, 'InstanceNumber', 0)
-            transfer_syntax = ''
-            if hasattr(dataset, 'file_meta') and hasattr(dataset.file_meta, 'TransferSyntaxUID'):
-                transfer_syntax = str(dataset.file_meta.TransferSyntaxUID)
-
-            instance_added = self.instance_metadata_handler.add_instance(
-                xml_path=xml_path,
-                sop_instance_uid=sop_uid,
-                instance_number=instance_number,
-                file_name=filename,
-                file_size=file_size,
-                transfer_syntax_uid=transfer_syntax
-            )
-
-            if instance_added:
-                new_count = self.instance_metadata_handler.get_instance_count(xml_path)
-                series.instances_count = new_count
-                series.save(update_fields=['instances_count'])
-
-            return {
-                'study': study,
-                'series': series,
-            }
-
-    def get_study(self, study_instance_uid: str) -> Optional[Session]:
+    def get_study(self, study_instance_uid: str) -> Optional[Any]:
         """Get a study by UID."""
-        try:
-            return Session.objects.get(study_instance_uid=study_instance_uid)
-        except Session.DoesNotExist:
-            return None
+        return self.study_service.get_study(study_instance_uid)
 
     def mark_study_complete(self, study_instance_uid: str) -> bool:
         """
@@ -182,19 +134,11 @@ class StorageManager:
         Returns:
             True if successful, False otherwise
         """
-        with self._lock:
-            try:
-                study = Session.objects.get(study_instance_uid=study_instance_uid)
-                study.status = 'complete'
-                study.completed_at = timezone.now()
-                study.save(update_fields=['status', 'completed_at'])
-                return True
-            except Session.DoesNotExist:
-                return False
+        return self.study_service.mark_study_complete(study_instance_uid)
 
-    def get_incomplete_studies(self) -> List[Session]:
+    def get_incomplete_studies(self) -> List[Any]:
         """Get all incomplete studies."""
-        return list(Session.objects.filter(status='incomplete'))
+        return self.study_service.get_incomplete_studies()
 
     def get_study_statistics(self, study_instance_uid: str) -> Optional[Dict[str, Any]]:
         """
@@ -206,19 +150,4 @@ class StorageManager:
         Returns:
             Dict with study statistics or None
         """
-        try:
-            study = Session.objects.get(study_instance_uid=study_instance_uid)
-            series_count = study.scans.count()
-            total_instances = sum(s.instances_count for s in study.scans.all())
-
-            return {
-                'study_uid': study.study_instance_uid,
-                'patient_name': study.patient_name,
-                'patient_id': study.patient_id,
-                'series_count': series_count,
-                'instances_count': total_instances,
-                'status': study.status,
-                'storage_path': study.storage_path,
-            }
-        except Session.DoesNotExist:
-            return None
+        return self.study_service.get_study_statistics(study_instance_uid)

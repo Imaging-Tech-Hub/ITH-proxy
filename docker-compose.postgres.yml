@@ -15,10 +15,8 @@ services:
       - "11112:11112"
 
     volumes:
-      # Persist storage directory (DICOM files, logs)
-      - ./storage:/app/storage
-      # Persist archives
-      - ./archives:/app/archives
+      # Persist data directory (database, DICOM files, logs, archives)
+      - ./data:/app/data
       # Optional: Mount .env file
       - ./.env:/app/.env:ro
 
@@ -40,10 +38,12 @@ services:
       - DICOM_AE_TITLE=${DICOM_AE_TITLE:-DICOMRCV}
       - DICOM_PORT=${DICOM_PORT:-11112}
       - DICOM_BIND_ADDRESS=${DICOM_BIND_ADDRESS:-0.0.0.0}
-      - DICOM_STORAGE_DIR=${DICOM_STORAGE_DIR:-/app/storage/studies}
-      - DICOM_LOG_DIR=${DICOM_LOG_DIR:-/app/storage/logs}
+      - DICOM_STORAGE_DIR=${DICOM_STORAGE_DIR:-/app/data}
+      - DICOM_LOG_DIR=${DICOM_LOG_DIR:-/app/data/logs}
       - DICOM_MAX_PDU_SIZE=${DICOM_MAX_PDU_SIZE:-16384}
       - DICOM_ACSE_TIMEOUT=${DICOM_ACSE_TIMEOUT:-30}
+      - DICOM_DIMSE_TIMEOUT=${DICOM_DIMSE_TIMEOUT:-60}
+      - DICOM_NETWORK_TIMEOUT=${DICOM_NETWORK_TIMEOUT:-60}
       - DICOM_MAX_ASSOCIATIONS=${DICOM_MAX_ASSOCIATIONS:-50}
       - DICOM_STUDY_TIMEOUT=${DICOM_STUDY_TIMEOUT:-60}
       - DICOM_LOG_LEVEL=${DICOM_LOG_LEVEL:-INFO}
@@ -54,6 +54,12 @@ services:
       - ITH_URL=${ITH_URL:-http://host.docker.internal:8000}
       - ITH_TOKEN=${ITH_TOKEN}
       - PROXY_VERSION=${PROXY_VERSION:-1.0.0}
+
+      # Archive & Upload
+      - ARCHIVE_DIR=${ARCHIVE_DIR:-/app/data/archives}
+      - UPLOAD_MAX_RETRIES=${UPLOAD_MAX_RETRIES:-3}
+      - UPLOAD_RETRY_DELAY=${UPLOAD_RETRY_DELAY:-5}
+      - CLEANUP_AFTER_UPLOAD=${CLEANUP_AFTER_UPLOAD:-True}
 
       # Locale
       - TIME_ZONE=${TIME_ZONE:-UTC}
