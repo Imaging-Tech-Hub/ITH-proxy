@@ -84,6 +84,7 @@ Configure the proxy through the `.env` file. Key variables:
 - `ITH_URL`: ITH backend URL (required)
 - `ITH_TOKEN`: Authentication token from ITH dashboard (required)
 - `PROXY_VERSION`: Proxy software version (default: `1.0.0`)
+- `PROXY_HOST_IP`: Manual IP override for Docker/NAT scenarios (optional, auto-detects if not set)
 
 ### Archive & Upload
 - `ARCHIVE_DIR`: Archive directory for ZIP files (default: `data/archives`)

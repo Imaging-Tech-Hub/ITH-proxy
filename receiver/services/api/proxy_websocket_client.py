@@ -497,6 +497,85 @@ class ProxyWebSocketClient:
 
             await asyncio.sleep(self.reconnect_delay)
 
+    def _get_host_ip_address(self) -> str:
+        """
+        Get the host IP address, handling Docker container scenarios.
+
+        Detection strategies (in order):
+        1. Check PROXY_HOST_IP environment variable (manual override)
+        2. Detect Docker environment and get host gateway IP
+        3. Find non-loopback network interface IP
+        4. Resolve hostname to IP
+        5. Fallback to localhost
+
+        Returns:
+            str: Best available IP address for DICOM connectivity
+        """
+        import socket
+        import os
+
+        env_ip = os.getenv('PROXY_HOST_IP', '').strip()
+        if env_ip:
+            logger.info(f"Using PROXY_HOST_IP from environment: {env_ip}")
+            return env_ip
+
+        is_docker = os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv')
+
+        if is_docker:
+            logger.info("Detected Docker environment")
+
+            try:
+                host_gateway = socket.gethostbyname('host.docker.internal')
+                logger.info(f"Found Docker host gateway: {host_gateway}")
+                return host_gateway
+            except (socket.gaierror, OSError):
+                logger.debug("host.docker.internal not available")
+
+            try:
+                with open('/proc/net/route', 'r') as f:
+                    for line in f:
+                        fields = line.strip().split()
+                        if fields[1] == '00000000':
+                            gateway_hex = fields[2]
+                            gateway_ip = '.'.join([
+                                str(int(gateway_hex[i:i+2], 16))
+                                for i in range(6, -1, -2)
+                            ])
+                            logger.info(f"Found Docker host via default gateway: {gateway_ip}")
+                            return gateway_ip
+            except (FileNotFoundError, IndexError, ValueError) as e:
+                logger.debug(f"Could not read route table: {e}")
+
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0.1)
+            try:
+                s.connect(('8.8.8.8', 80))
+                ip_address = s.getsockname()[0]
+                s.close()
+
+                if not ip_address.startswith('172.17.'):
+                    logger.info(f"Found primary network interface IP: {ip_address}")
+                    return ip_address
+                else:
+                    logger.debug(f"Skipping Docker internal IP: {ip_address}")
+            except (socket.error, socket.timeout):
+                s.close()
+        except Exception as e:
+            logger.debug(f"Could not detect network interface IP: {e}")
+
+        hostname = socket.gethostname()
+        try:
+            ip_address = socket.gethostbyname(hostname)
+            if not ip_address.startswith('172.17.') and ip_address != '127.0.0.1':
+                logger.info(f"Resolved hostname {hostname} to: {ip_address}")
+                return ip_address
+        except (socket.gaierror, OSError) as e:
+            logger.debug(f"Could not resolve hostname {hostname}: {e}")
+
+        logger.warning("Could not detect host IP, using localhost (DICOM devices must be on same machine)")
+        return '127.0.0.1'
+
     async def _send_initial_config(self):
         """
         Send initial configuration update after connection.
@@ -506,16 +585,11 @@ class ProxyWebSocketClient:
         """
         try:
             from django.conf import settings
-            import socket
 
-            hostname = socket.gethostname()
-            try:
-                ip_address = socket.gethostbyname(hostname)
-            except (socket.gaierror, OSError) as e:
-                logger.warning(f"Could not resolve hostname {hostname}: {e}")
-                ip_address = '127.0.0.1'
-
+            ip_address = self._get_host_ip_address()
             proxy_version = getattr(settings, 'PROXY_VERSION', '1.0.0')
+
+            logger.info(f"Sending config update with IP: {ip_address}:{settings.DICOM_PORT}")
 
             await self.send_config_update(
                 ip_address=ip_address,
