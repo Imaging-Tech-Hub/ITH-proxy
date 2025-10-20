@@ -40,8 +40,10 @@ RUN python manage.py collectstatic --noinput || true
 
 # Expose ports
 # 8080 - Django HTTP server
-# 11112 - DICOM SCP server (configurable via DICOM_PORT)
-EXPOSE 8080 11112
+# DICOM_PORT - DICOM SCP server (configurable via build arg/env)
+ARG DICOM_PORT=11112
+ENV DICOM_PORT=${DICOM_PORT}
+EXPOSE 8080 ${DICOM_PORT}
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

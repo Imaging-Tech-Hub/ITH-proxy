@@ -12,7 +12,7 @@ services:
       # Django HTTP API
       - "8080:8080"
       # DICOM SCP Server
-      - "11112:11112"
+      - "${DICOM_PORT:-11112}:${DICOM_PORT:-11112}"
 
     volumes:
       # Persist data directory (database, DICOM files, logs, archives)
