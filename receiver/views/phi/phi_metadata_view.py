@@ -57,13 +57,18 @@ class PHIMetadataAPIView(APIView):
 
     def _get_phi_metadata(self, study_uid: str) -> Response:
         """
-        Retrieve PHI metadata for a study.
+        Retrieve PHI metadata for a study from all three levels.
+
+        Collects:
+        - Patient-level PHI from PatientMapping
+        - Study-level PHI from Session
+        - Series-level PHI from all Scans in the study
 
         Args:
             study_uid: Study Instance UID
 
         Returns:
-            DRF Response with PHI metadata
+            DRF Response with three-level PHI metadata
         """
         try:
             study = get_study(study_uid)
@@ -82,22 +87,54 @@ class PHIMetadataAPIView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
+            # Get all scans (series) for this study
+            scans = study.scans.all()
+
+            # Collect series-level PHI from each scan
+            series_phi_list = []
+            for scan in scans:
+                series_phi = scan.get_phi_metadata()
+                if series_phi:
+                    # Include series identifiers with PHI
+                    series_phi_list.append({
+                        "series_instance_uid": scan.series_instance_uid,
+                        "series_number": scan.series_number,
+                        "modality": scan.modality,
+                        "phi_metadata": series_phi
+                    })
+
             response_data = {
                 "study_instance_uid": study.study_instance_uid,
                 "patient_name": study.patient_name,
                 "patient_id": study.patient_id,
-                "phi_metadata": mapping.get_phi_metadata(),
+
+                # Three-level PHI structure
+                "patient_phi": mapping.get_phi_metadata(),
+                "study_phi": study.get_phi_metadata(),
+                "series_phi": series_phi_list,
+
+                # Original patient identifiers
                 "original_patient_name": mapping.original_patient_name,
                 "original_patient_id": mapping.original_patient_id,
+
+                # Study metadata (anonymized values currently in DB)
                 "study_date": study.study_date,
                 "study_time": study.study_time,
                 "study_description": study.study_description,
                 "accession_number": study.accession_number,
                 "status": study.status,
+
+                # Series count
+                "series_count": scans.count(),
             }
 
             serializer = PHIMetadataSerializer(response_data)
-            logger.info(f"Retrieved PHI metadata for study: {study_uid}")
+            logger.info(
+                f"Retrieved PHI metadata for study: {study_uid} "
+                f"(Patient-level: {len(response_data['patient_phi'])} fields, "
+                f"Study-level: {len(response_data['study_phi'])} fields, "
+                f"Series: {len(series_phi_list)} series)"
+            )
 
             return Response(serializer.data, status=status.HTTP_200_OK)
 
