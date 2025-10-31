@@ -135,18 +135,29 @@ class StoreHandler:
                 should_anonymize = self.config_service.is_phi_anonymization_enabled()
                 logger.info(f" PHI Anonymization: {'Enabled' if should_anonymize else 'Disabled'}")
 
+            study_phi = None
+            series_phi = None
+
             if should_anonymize:
-                dataset, mapping = self.anonymizer.anonymize_dataset(dataset)
+                dataset, phi_data = self.anonymizer.anonymize_dataset(dataset)
+                mapping = phi_data['mapping']
+                study_phi = phi_data['study_phi']
+                series_phi = phi_data['series_phi']
                 logger.info(f" Anonymized: {mapping['original_name']} → {mapping['anonymous_name']}")
+                logger.debug(f" PHI extracted - Study: {len(study_phi)} fields, Series: {len(series_phi)} fields")
             else:
                 logger.info(f"Storing with original PHI (anonymization disabled)")
-                mapping = None
 
             self._fix_dicom_metadata(dataset)
 
             filename = f"{dataset.SOPInstanceUID}.dcm"
 
-            result = self.storage_manager.store_dicom_file(dataset, filename)
+            result = self.storage_manager.store_dicom_file(
+                dataset,
+                filename,
+                study_phi_metadata=study_phi,
+                series_phi_metadata=series_phi
+            )
 
             logger.info(f" Stored to: {result['series'].storage_path}")
             logger.info(f" Study stats: {result['series'].instances_count} instances in series")

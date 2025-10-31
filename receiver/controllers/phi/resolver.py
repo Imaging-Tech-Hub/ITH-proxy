@@ -82,16 +82,23 @@ class PHIResolver:
 
         return None
 
-    def resolve_dataset(self, dataset: Dataset) -> Dataset:
+    def resolve_dataset(
+        self,
+        dataset: Dataset,
+        session=None,
+        scan=None
+    ) -> Dataset:
         """
         De-anonymize patient data in a DICOM dataset.
-        Restores all removed PHI data including dates, physician names, etc.
+        Restores all removed PHI data from three levels: patient, study, and series.
 
         Args:
             dataset: pydicom Dataset object with anonymous patient data
+            session: Optional Session object to restore study-level PHI
+            scan: Optional Scan object to restore series-level PHI
 
         Returns:
-            Dataset with original patient information and PHI restored
+            Dataset with original patient information and PHI restored from all levels
         """
         anonymous_name = getattr(dataset, 'PatientName', None)
         anonymous_id = getattr(dataset, 'PatientID', None)
@@ -99,6 +106,7 @@ class PHIResolver:
         if not anonymous_name and not anonymous_id:
             return dataset
 
+        # 1. Restore patient identifiers
         mapping_info = self.resolve_patient(
             anonymous_name=str(anonymous_name) if anonymous_name else None,
             anonymous_id=str(anonymous_id) if anonymous_id else None
@@ -108,13 +116,30 @@ class PHIResolver:
             dataset.PatientName = mapping_info['original_name']
             dataset.PatientID = mapping_info['original_id']
 
+            # 2. Restore patient-level PHI from PatientMapping
             mapping = self.mapping_service.find_by_anonymous(
                 anonymous_name=mapping_info['anonymous_name']
             )
 
             if mapping:
-                phi_metadata = mapping.get_phi_metadata()
-                self._restore_phi_metadata(dataset, phi_metadata)
+                patient_phi = mapping.get_phi_metadata()
+                if patient_phi:
+                    logger.debug(f"Restoring patient-level PHI ({len(patient_phi)} fields)")
+                    self._restore_phi_metadata(dataset, patient_phi)
+
+            # 3. Restore study-level PHI from Session
+            if session:
+                study_phi = session.get_phi_metadata()
+                if study_phi:
+                    logger.debug(f"Restoring study-level PHI ({len(study_phi)} fields)")
+                    self._restore_phi_metadata(dataset, study_phi)
+
+            # 4. Restore series-level PHI from Scan
+            if scan:
+                series_phi = scan.get_phi_metadata()
+                if series_phi:
+                    logger.debug(f"Restoring series-level PHI ({len(series_phi)} fields)")
+                    self._restore_phi_metadata(dataset, series_phi)
 
         return dataset
 

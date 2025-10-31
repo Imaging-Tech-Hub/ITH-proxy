@@ -29,6 +29,10 @@ class Session(models.Model):
 
     storage_path = models.CharField(max_length=500)
 
+    # Study-level PHI metadata (original values before anonymization)
+    # Stores: StudyDate, StudyTime, StudyID, Institution info, Physician names, etc.
+    phi_metadata = models.JSONField(default=dict, blank=True)
+
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -44,6 +48,15 @@ class Session(models.Model):
 
     def __str__(self):
         return f"Session {self.study_instance_uid} - {self.patient_name}"
+
+    def get_phi_metadata(self) -> dict:
+        """Get stored study-level PHI metadata."""
+        return self.phi_metadata or {}
+
+    def set_phi_metadata(self, metadata: dict):
+        """Store study-level PHI metadata."""
+        self.phi_metadata = metadata
+        self.save(update_fields=['phi_metadata'])
 
     def delete(self, *args, **kwargs):
         """

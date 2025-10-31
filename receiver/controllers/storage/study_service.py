@@ -43,7 +43,8 @@ class StudyService:
         patient_name: str,
         patient_id: str,
         storage_path: str,
-        dataset: Dataset
+        dataset: Dataset,
+        study_phi_metadata: Optional[Dict[str, str]] = None
     ) -> tuple[Session, bool]:
         """
         Get or create a study (Session) in the database.
@@ -54,27 +55,36 @@ class StudyService:
             patient_id: Patient ID
             storage_path: Path where study files are stored
             dataset: DICOM dataset containing study metadata
+            study_phi_metadata: Study-level PHI metadata to store
 
         Returns:
             Tuple of (study, created) where created is True if newly created
         """
         with self._lock:
+            defaults = {
+                'patient_name': str(patient_name),
+                'patient_id': str(patient_id),
+                'study_date': getattr(dataset, 'StudyDate', None),
+                'study_time': getattr(dataset, 'StudyTime', None),
+                'study_description': getattr(dataset, 'StudyDescription', ''),
+                'accession_number': getattr(dataset, 'AccessionNumber', ''),
+                'storage_path': storage_path,
+                'status': 'incomplete',
+            }
+
+            # Add study-level PHI metadata if provided
+            if study_phi_metadata:
+                defaults['phi_metadata'] = study_phi_metadata
+
             study, created = Session.objects.get_or_create(
                 study_instance_uid=study_uid,
-                defaults={
-                    'patient_name': str(patient_name),
-                    'patient_id': str(patient_id),
-                    'study_date': getattr(dataset, 'StudyDate', None),
-                    'study_time': getattr(dataset, 'StudyTime', None),
-                    'study_description': getattr(dataset, 'StudyDescription', ''),
-                    'accession_number': getattr(dataset, 'AccessionNumber', ''),
-                    'storage_path': storage_path,
-                    'status': 'incomplete',
-                }
+                defaults=defaults
             )
 
             if created:
                 logger.info(f"Created new study: {study_uid} for patient {patient_id}")
+                if study_phi_metadata:
+                    logger.debug(f"Stored study-level PHI ({len(study_phi_metadata)} fields)")
             else:
                 study.last_received_at = timezone.now()
                 study.save(update_fields=['last_received_at'])
@@ -87,7 +97,8 @@ class StudyService:
         series_uid: str,
         study: Session,
         storage_path: str,
-        dataset: Dataset
+        dataset: Dataset,
+        series_phi_metadata: Optional[Dict[str, str]] = None
     ) -> tuple[Scan, bool]:
         """
         Get or create a series (Scan) in the database.
@@ -97,25 +108,34 @@ class StudyService:
             study: Parent study (Session) object
             storage_path: Path where series files are stored
             dataset: DICOM dataset containing series metadata
+            series_phi_metadata: Series-level PHI metadata to store
 
         Returns:
             Tuple of (series, created) where created is True if newly created
         """
         with self._lock:
+            defaults = {
+                'session': study,
+                'series_number': getattr(dataset, 'SeriesNumber', None),
+                'series_description': getattr(dataset, 'SeriesDescription', ''),
+                'modality': getattr(dataset, 'Modality', ''),
+                'storage_path': storage_path,
+                'instances_count': 0,
+            }
+
+            # Add series-level PHI metadata if provided
+            if series_phi_metadata:
+                defaults['phi_metadata'] = series_phi_metadata
+
             series, created = Scan.objects.get_or_create(
                 series_instance_uid=series_uid,
-                defaults={
-                    'session': study,
-                    'series_number': getattr(dataset, 'SeriesNumber', None),
-                    'series_description': getattr(dataset, 'SeriesDescription', ''),
-                    'modality': getattr(dataset, 'Modality', ''),
-                    'storage_path': storage_path,
-                    'instances_count': 0,
-                }
+                defaults=defaults
             )
 
             if created:
                 logger.info(f"Created new series: {series_uid} in study {study.study_instance_uid}")
+                if series_phi_metadata:
+                    logger.debug(f"Stored series-level PHI ({len(series_phi_metadata)} fields)")
             else:
                 logger.debug(f"Using existing series: {series_uid}")
 

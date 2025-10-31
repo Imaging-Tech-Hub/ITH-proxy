@@ -37,9 +37,10 @@ class PatientMappingAdmin(admin.ModelAdmin):
             'fields': ('original_patient_id', 'original_patient_name'),
             'classes': ('collapse',),
         }),
-        ('PHI Metadata', {
+        ('Patient-Level PHI Metadata', {
             'fields': ('phi_metadata_display',),
             'classes': ('collapse',),
+            'description': 'Patient-level PHI metadata (PatientBirthDate, PatientSex, PatientWeight, etc.). Study and series PHI are stored in their respective tables.',
         }),
         ('Timestamps', {
             'fields': ('created_at',),
@@ -47,7 +48,7 @@ class PatientMappingAdmin(admin.ModelAdmin):
     )
 
     def phi_metadata_preview(self, obj):
-        """Show preview of PHI metadata."""
+        """Show preview of patient-level PHI metadata."""
         metadata = obj.get_phi_metadata()
         if metadata:
             keys = list(metadata.keys())[:3]
@@ -56,14 +57,21 @@ class PatientMappingAdmin(admin.ModelAdmin):
                 preview += f' (+{len(metadata) - 3} more)'
             return preview
         return '-'
-    phi_metadata_preview.short_description = 'PHI Metadata'
+    phi_metadata_preview.short_description = 'Patient PHI'
 
     def phi_metadata_display(self, obj):
-        """Display formatted PHI metadata."""
+        """Display formatted patient-level PHI metadata."""
         import json
         metadata = obj.get_phi_metadata()
         if metadata:
             formatted = json.dumps(metadata, indent=2)
-            return format_html('<pre>{}</pre>', formatted)
-        return '-'
-    phi_metadata_display.short_description = 'PHI Metadata (JSON)'
+            return format_html(
+                '<pre style="padding: 10px; border-radius: 4px; '
+                'background: rgba(0, 0, 0, 0.05); '
+                'border: 1px solid rgba(0, 0, 0, 0.1); '
+                'max-height: 400px; overflow: auto;">'
+                '{}</pre>',
+                formatted
+            )
+        return format_html('<em>No patient-level PHI metadata stored</em>')
+    phi_metadata_display.short_description = 'Patient-Level PHI Metadata (JSON)'

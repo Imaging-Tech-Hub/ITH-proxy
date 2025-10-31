@@ -7,7 +7,10 @@ class PatientMapping(models.Model):
     """
     Stores reversible patient anonymization mappings.
     Maps original patient identifiers to anonymous identifiers.
-    Preserves removed PHI data for authorized de-anonymization.
+    Preserves patient-level PHI data for authorized de-anonymization.
+
+    Patient-level PHI includes: PatientBirthDate, PatientSize, PatientWeight, PatientSex
+    Note: PatientAge is NOT stored as it can be calculated from PatientBirthDate + StudyDate
     """
     original_patient_name = models.CharField(max_length=512, db_index=True)
     original_patient_id = models.CharField(max_length=512, db_index=True)

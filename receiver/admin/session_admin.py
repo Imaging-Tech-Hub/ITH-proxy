@@ -19,6 +19,7 @@ class SessionAdmin(admin.ModelAdmin):
         'study_time',
         'status_badge',
         'scans_count',
+        'phi_metadata_preview',
         'last_received_at',
     ]
     list_filter = ['status', 'study_date', 'last_received_at']
@@ -35,6 +36,7 @@ class SessionAdmin(admin.ModelAdmin):
         'created_at',
         'updated_at',
         'completed_at',
+        'phi_metadata_display',
     ]
 
     fieldsets = (
@@ -58,6 +60,11 @@ class SessionAdmin(admin.ModelAdmin):
         ('Storage', {
             'fields': ('storage_path',),
             'classes': ('collapse',),
+        }),
+        ('Study-Level PHI Metadata', {
+            'fields': ('phi_metadata_display',),
+            'classes': ('collapse',),
+            'description': 'Original study-level PHI metadata stored for de-anonymization (StudyDate, Institution, Physicians, etc.)',
         }),
         ('Timestamps', {
             'fields': ('created_at', 'updated_at'),
@@ -93,3 +100,32 @@ class SessionAdmin(admin.ModelAdmin):
         """Show number of scans."""
         return obj.scans.count()
     scans_count.short_description = 'Scans'
+
+    def phi_metadata_preview(self, obj):
+        """Show preview of study-level PHI metadata."""
+        metadata = obj.get_phi_metadata()
+        if metadata:
+            keys = list(metadata.keys())[:3]
+            preview = ', '.join(keys)
+            if len(metadata) > 3:
+                preview += f' (+{len(metadata) - 3} more)'
+            return preview
+        return '-'
+    phi_metadata_preview.short_description = 'Study PHI'
+
+    def phi_metadata_display(self, obj):
+        """Display formatted study-level PHI metadata."""
+        import json
+        metadata = obj.get_phi_metadata()
+        if metadata:
+            formatted = json.dumps(metadata, indent=2)
+            return format_html(
+                '<pre style="padding: 10px; border-radius: 4px; '
+                'background: rgba(0, 0, 0, 0.05); '
+                'border: 1px solid rgba(0, 0, 0, 0.1); '
+                'max-height: 400px; overflow: auto;">'
+                '{}</pre>',
+                formatted
+            )
+        return format_html('<em>No study-level PHI metadata stored</em>')
+    phi_metadata_display.short_description = 'Study-Level PHI Metadata (JSON)'
