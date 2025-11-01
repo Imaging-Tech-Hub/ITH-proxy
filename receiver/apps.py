@@ -26,6 +26,9 @@ class ReceiverConfig(AppConfig):
         from django.conf import settings
         from receiver.signals import register_shutdown_handlers
 
+        # Import cache invalidation signals (they auto-register via @receiver decorator)
+        import receiver.signals  # noqa: F401
+
         register_shutdown_handlers()
 
         self.load_proxy_configuration()

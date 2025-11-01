@@ -285,6 +285,23 @@ CHANNEL_LAYERS = {
 }
 
 # =============================================================================
+# Cache Configuration
+# =============================================================================
+
+# Cache backend for PHI metadata queries
+# Using LocMemCache for fast in-memory caching
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'phi-metadata-cache',
+        'OPTIONS': {
+            'MAX_ENTRIES': 10000,  # Max number of cache entries
+        },
+        'TIMEOUT': int(os.getenv('CACHE_TIMEOUT', '300')),  # Cache timeout in seconds (default: 5 minutes)
+    }
+}
+
+# =============================================================================
 # ITH API Configuration
 # =============================================================================
 
@@ -296,3 +313,11 @@ ITH_TOKEN = os.getenv('ITH_TOKEN', '')
 
 # Proxy version
 PROXY_VERSION = os.getenv('PROXY_VERSION', '1.0.0')
+
+# Proxy API Configuration
+# HTTP port for Django API server (default: 8080 in Docker, 8000 for dev)
+API_PORT = int(os.getenv('API_PORT', '8080'))
+
+# Public API URL to be shared with ITH backend
+# If not set, will be auto-constructed as http://{ip_address}:{API_PORT}/api
+PROXY_API_URL = os.getenv('PROXY_API_URL', '')  # Leave empty for auto-detection

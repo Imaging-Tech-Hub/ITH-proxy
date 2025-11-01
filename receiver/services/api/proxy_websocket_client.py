@@ -176,7 +176,7 @@ class ProxyWebSocketClient:
         ip_address: str,
         port: int,
         ae_title: str,
-        resolver_url: str = "",
+        api_url: str = "",
         proxy_version: str = "1.0.0"
     ) -> bool:
         """
@@ -186,7 +186,7 @@ class ProxyWebSocketClient:
             ip_address: Proxy IP address
             port: DICOM port
             ae_title: DICOM AE title
-            resolver_url: PHI resolver URL
+            api_url: Proxy API base URL (e.g., http://192.168.1.100:8080/api)
             proxy_version: Proxy software version
 
         Returns:
@@ -202,7 +202,7 @@ class ProxyWebSocketClient:
                 "ip_address": ip_address,
                 "port": port,
                 "ae_title": ae_title,
-                "resolver_information_url": resolver_url,
+                "api_url": api_url,
                 "proxy_version": proxy_version
             }
 
@@ -576,6 +576,30 @@ class ProxyWebSocketClient:
         logger.warning("Could not detect host IP, using localhost (DICOM devices must be on same machine)")
         return '127.0.0.1'
 
+    def _construct_api_url(self, ip_address: str) -> str:
+        """
+        Construct the public API URL for this proxy.
+
+        Args:
+            ip_address: The IP address where proxy is accessible
+
+        Returns:
+            Full API base URL (e.g., http://192.168.1.100:8080/api)
+        """
+        from django.conf import settings
+
+        explicit_url = getattr(settings, 'PROXY_API_URL', '').strip()
+        if explicit_url:
+            if not explicit_url.endswith('/api') and not explicit_url.endswith('/api/'):
+                explicit_url = explicit_url.rstrip('/') + '/api'
+            logger.info(f"Using explicit PROXY_API_URL: {explicit_url}")
+            return explicit_url
+
+        api_port = getattr(settings, 'API_PORT', 8080)
+        api_url = f"http://{ip_address}:{api_port}/api"
+        logger.info(f"Auto-constructed API URL: {api_url}")
+        return api_url
+
     async def _send_initial_config(self):
         """
         Send initial configuration update after connection.
@@ -589,13 +613,17 @@ class ProxyWebSocketClient:
             ip_address = self._get_host_ip_address()
             proxy_version = getattr(settings, 'PROXY_VERSION', '1.0.0')
 
-            logger.info(f"Sending config update with IP: {ip_address}:{settings.DICOM_PORT}")
+            api_url = self._construct_api_url(ip_address)
+
+            logger.info(f"Sending config update:")
+            logger.info(f"  DICOM: {ip_address}:{settings.DICOM_PORT} (AE: {settings.DICOM_AE_TITLE})")
+            logger.info(f"  API: {api_url}")
 
             await self.send_config_update(
                 ip_address=ip_address,
                 port=settings.DICOM_PORT,
                 ae_title=settings.DICOM_AE_TITLE,
-                resolver_url='',
+                api_url=api_url,
                 proxy_version=proxy_version
             )
 

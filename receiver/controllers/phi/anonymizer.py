@@ -4,6 +4,7 @@ Uses pydicom's built-in anonymization for DICOM de-identification.
 Follows DICOM PS3.15 Annex E de-identification profiles.
 """
 import logging
+import uuid
 from typing import Dict, Tuple, Optional, List, Callable, Any
 
 from pydicom import Dataset
@@ -101,6 +102,31 @@ class PHIAnonymizer:
         """
         self.mapping_service = mapping_service or PatientMappingService()
 
+    def _generate_unique_anonymous_id(self) -> str:
+        """
+        Generate a unique 12-character anonymous ID using UUID.
+
+        Uses 12 hex characters from UUID4 for 281 trillion possible combinations.
+        This provides virtually zero collision probability even with millions of patients
+        across multiple proxies.
+
+        Returns:
+            Unique 12-character ID string (e.g., "a1b2c3d4e5f6")
+        """
+        max_attempts = 100
+        for _ in range(max_attempts):
+            # Generate UUID4 and take first 12 characters of hex representation
+            random_uuid = uuid.uuid4()
+            anonymous_id = random_uuid.hex[:12]
+
+            # Check if this ID already exists
+            existing = self.mapping_service.find_by_anonymous(anonymous_id=f"ANON-{anonymous_id}")
+            if not existing:
+                return anonymous_id
+
+        # Fallback: if we can't find a unique ID after max_attempts, raise an error
+        raise ValueError(f"Could not generate unique anonymous ID after {max_attempts} attempts")
+
     def anonymize_patient(self, patient_name: str, patient_id: str) -> Dict[str, str]:
         """
         Anonymize patient information.
@@ -111,8 +137,8 @@ class PHIAnonymizer:
 
         Returns:
             Dict containing:
-                - anonymous_name: Anonymous patient name (e.g., "ANON-00001")
-                - anonymous_id: Anonymous patient ID (e.g., "ANON-00001")
+                - anonymous_name: Anonymous patient name (e.g., "ANON-a1b2c3d4e5f6")
+                - anonymous_id: Anonymous patient ID (e.g., "ANON-a1b2c3d4e5f6")
                 - original_name: Original patient name
                 - original_id: Original patient ID
         """
@@ -129,8 +155,10 @@ class PHIAnonymizer:
                 'original_id': mapping.original_patient_id,
             }
 
-        anonymous_name = f"ANON-{patient_id}"
-        anonymous_id = f"ANON-{patient_id}"
+        # Generate unique 12-character anonymous ID
+        unique_id = self._generate_unique_anonymous_id()
+        anonymous_name = f"ANON-{unique_id}"
+        anonymous_id = f"ANON-{unique_id}"
 
         try:
             mapping, created = self.mapping_service.get_or_create_mapping(

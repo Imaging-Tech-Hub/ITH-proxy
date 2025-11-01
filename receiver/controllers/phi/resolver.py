@@ -43,8 +43,8 @@ class PHIResolver:
         Uses local database (PatientMapping) only.
 
         Args:
-            anonymous_name: Anonymous patient name (e.g., "ANON-00001" or subject label)
-            anonymous_id: Anonymous patient ID (e.g., "ANON-00001")
+            anonymous_name: Anonymous patient name (e.g., "ANON-a1b2c3d4e5f6" or subject label)
+            anonymous_id: Anonymous patient ID (e.g., "ANON-a1b2c3d4e5f6")
             subject_id: Backend subject ID (unused - kept for compatibility)
 
         Returns:
