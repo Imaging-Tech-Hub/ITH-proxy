@@ -109,6 +109,12 @@ class ProxyWebSocketClient:
             message_type = data.get('type')
             event_type = data.get('event_type')
 
+            if not event_type and 'payload' in data:
+                nested_payload = data.get('payload', {})
+                event_type = nested_payload.get('event_type')
+                if event_type:
+                    logger.debug(f"Event type found in nested payload: {event_type}")
+
             if message_type == 'connected':
                 self.workspace_id = data.get('workspace_id')
                 self.proxy_id = data.get('proxy_id')
@@ -129,8 +135,14 @@ class ProxyWebSocketClient:
             elif event_type:
                 logger.info(f"Received event '{event_type}' - connection already established")
 
-                self.workspace_id = data.get('workspace_id')
-                self.proxy_id = data.get('entity_id')
+                # Extract workspace_id and entity_id from nested payload if present
+                if 'payload' in data:
+                    nested_payload = data.get('payload', {})
+                    self.workspace_id = nested_payload.get('workspace_id', data.get('workspace_id'))
+                    self.proxy_id = nested_payload.get('entity_id', data.get('entity_id'))
+                else:
+                    self.workspace_id = data.get('workspace_id')
+                    self.proxy_id = data.get('entity_id')
 
                 if not self.workspace_id or not self.proxy_id:
                     logger.error(f"Missing workspace_id or entity_id in event message")
@@ -144,7 +156,22 @@ class ProxyWebSocketClient:
 
                 logger.info(f"WebSocket connected via event - Workspace: {self.workspace_id}, Proxy: {self.proxy_id}")
 
-                asyncio.create_task(self._handle_event(event_type, data))
+                # Normalize data structure (flatten nested payload)
+                if 'payload' in data:
+                    nested_payload = data.get('payload', {})
+                    normalized_data = {
+                        'event_type': event_type,
+                        'workspace_id': nested_payload.get('workspace_id', data.get('workspace_id')),
+                        'timestamp': nested_payload.get('timestamp', data.get('timestamp')),
+                        'correlation_id': nested_payload.get('correlation_id'),
+                        'entity_type': nested_payload.get('entity_type'),
+                        'entity_id': nested_payload.get('entity_id'),
+                        'payload': nested_payload.get('payload', {})
+                    }
+                else:
+                    normalized_data = data
+
+                asyncio.create_task(self._handle_event(event_type, normalized_data))
 
                 return True
 
