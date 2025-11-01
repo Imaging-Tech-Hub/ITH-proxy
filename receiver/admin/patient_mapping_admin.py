@@ -10,6 +10,8 @@ from receiver.models import PatientMapping
 class PatientMappingAdmin(admin.ModelAdmin):
     """
     Admin interface for PatientMapping model.
+
+    Overrides delete methods to ensure cascade deletion of sessions and scans.
     """
     list_display = [
         'id',
@@ -75,3 +77,21 @@ class PatientMappingAdmin(admin.ModelAdmin):
             )
         return format_html('<em>No patient-level PHI metadata stored</em>')
     phi_metadata_display.short_description = 'Patient-Level PHI Metadata (JSON)'
+
+    def delete_model(self, request, obj):
+        """
+        Override delete_model to ensure custom delete() is called for single object deletion.
+
+        This is called when deleting a single object from the detail page.
+        """
+        obj.delete()
+
+    def delete_queryset(self, request, queryset):
+        """
+        Override delete_queryset to ensure custom delete() is called for each object.
+
+        This is called when using the bulk delete action (selecting multiple objects).
+        Django's default queryset.delete() bypasses the model's custom delete() method.
+        """
+        for obj in queryset:
+            obj.delete()

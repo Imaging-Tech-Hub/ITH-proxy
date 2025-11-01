@@ -10,7 +10,7 @@ Handlers are organized by category:
 """
 from .base import BaseEventHandler
 from .system import PingHandler
-from .deletion import SessionDeletedHandler, ScanDeletedHandler
+from .deletion import SessionDeletedHandler, ScanDeletedHandler, SubjectDeletedHandler
 from .dispatch import (
     SubjectDispatchHandler,
     SessionDispatchHandler,
@@ -33,6 +33,7 @@ __all__ = [
     # Deletion Handlers
     'SessionDeletedHandler',
     'ScanDeletedHandler',
+    'SubjectDeletedHandler',
 
     # Dispatch Handlers
     'SubjectDispatchHandler',

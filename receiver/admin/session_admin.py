@@ -10,6 +10,8 @@ from receiver.models import Session
 class SessionAdmin(admin.ModelAdmin):
     """
     Admin interface for Session model.
+
+    Overrides delete methods to ensure cascade deletion of scans and storage cleanup.
     """
     list_display = [
         'study_instance_uid_short',
@@ -129,3 +131,22 @@ class SessionAdmin(admin.ModelAdmin):
             )
         return format_html('<em>No study-level PHI metadata stored</em>')
     phi_metadata_display.short_description = 'Study-Level PHI Metadata (JSON)'
+
+    def delete_model(self, request, obj):
+        """
+        Override delete_model to ensure custom delete() is called for single object deletion.
+
+        This is called when deleting a single session from the detail page.
+        Ensures scans are deleted, storage is cleaned up, and orphaned patients are removed.
+        """
+        obj.delete()
+
+    def delete_queryset(self, request, queryset):
+        """
+        Override delete_queryset to ensure custom delete() is called for each object.
+
+        This is called when using the bulk delete action (selecting multiple sessions).
+        Django's default queryset.delete() bypasses the model's custom delete() method.
+        """
+        for obj in queryset:
+            obj.delete()

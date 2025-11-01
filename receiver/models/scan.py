@@ -52,3 +52,23 @@ class Scan(models.Model):
         """Get full path to instances metadata XML file."""
         from pathlib import Path
         return Path(self.storage_path) / self.instances_metadata_file
+
+    def delete(self, *args, **kwargs):
+        """
+        Override delete to clean up storage directory.
+
+        When a scan is deleted:
+        1. Remove the storage directory and all DICOM files
+        2. Delete the scan record
+        """
+        import shutil
+        from pathlib import Path
+
+        storage_path = self.storage_path
+
+        super().delete(*args, **kwargs)
+
+        if storage_path:
+            storage_dir = Path(storage_path)
+            if storage_dir.exists():
+                shutil.rmtree(storage_dir, ignore_errors=True)

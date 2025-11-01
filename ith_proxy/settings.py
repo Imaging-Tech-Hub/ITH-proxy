@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',  # CORS headers support
     'rest_framework',
     'channels',
     'receiver',
@@ -54,6 +55,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Must be after SecurityMiddleware
+    'corsheaders.middleware.CorsMiddleware',  # CORS - Must be before CommonMiddleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -300,6 +302,39 @@ CACHES = {
         'TIMEOUT': int(os.getenv('CACHE_TIMEOUT', '300')),  # Cache timeout in seconds (default: 5 minutes)
     }
 }
+
+# =============================================================================
+# CORS Configuration
+# =============================================================================
+
+# Allow all origins for API access (frontend can access from any domain)
+CORS_ALLOW_ALL_ORIGINS = True
+
+# Allow credentials (cookies, authorization headers)
+CORS_ALLOW_CREDENTIALS = True
+
+# Allow all standard HTTP methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# Allow all headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 # =============================================================================
 # ITH API Configuration

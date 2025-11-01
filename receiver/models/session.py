@@ -62,24 +62,30 @@ class Session(models.Model):
         """
         Override delete to clean up orphaned patient mappings.
         Also removes storage directory and all files.
+
+        Args:
+            skip_patient_cleanup: Internal flag to prevent circular deletion when called from PatientMapping.delete()
         """
         import shutil
         from pathlib import Path
         from .patient_mapping import PatientMapping
+
+        skip_patient_cleanup = kwargs.pop('skip_patient_cleanup', False)
 
         patient_id = self.patient_id
         storage_path = self.storage_path
 
         super().delete(*args, **kwargs)
 
-        remaining_sessions = Session.objects.filter(patient_id=patient_id).exists()
+        if not skip_patient_cleanup:
+            remaining_sessions = Session.objects.filter(patient_id=patient_id).exists()
 
-        if not remaining_sessions:
-            try:
-                mapping = PatientMapping.objects.get(anonymous_patient_id=patient_id)
-                mapping.delete()
-            except PatientMapping.DoesNotExist:
-                pass
+            if not remaining_sessions:
+                try:
+                    mapping = PatientMapping.objects.get(anonymous_patient_id=patient_id)
+                    mapping.delete(skip_session_cleanup=True)
+                except PatientMapping.DoesNotExist:
+                    pass
 
         if storage_path:
             storage_dir = Path(storage_path)

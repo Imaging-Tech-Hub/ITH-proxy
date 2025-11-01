@@ -10,6 +10,8 @@ from receiver.models import Scan
 class ScanAdmin(admin.ModelAdmin):
     """
     Admin interface for Scan model.
+
+    Overrides delete methods to ensure storage cleanup.
     """
     list_display = [
         'series_instance_uid_short',
@@ -119,3 +121,22 @@ class ScanAdmin(admin.ModelAdmin):
             )
         return format_html('<em>No series-level PHI metadata stored</em>')
     phi_metadata_display.short_description = 'Series-Level PHI Metadata (JSON)'
+
+    def delete_model(self, request, obj):
+        """
+        Override delete_model to ensure custom delete() is called for single object deletion.
+
+        This is called when deleting a single scan from the detail page.
+        Ensures storage directory is cleaned up.
+        """
+        obj.delete()
+
+    def delete_queryset(self, request, queryset):
+        """
+        Override delete_queryset to ensure custom delete() is called for each object.
+
+        This is called when using the bulk delete action (selecting multiple scans).
+        Django's default queryset.delete() bypasses the model's custom delete() method.
+        """
+        for obj in queryset:
+            obj.delete()

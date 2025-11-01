@@ -61,8 +61,9 @@ class BackendTokenAuthentication(authentication.BaseAuthentication):
         if not user_info:
             raise exceptions.AuthenticationFailed('Invalid or expired token.')
 
-
-        return (user_info, token)
+        # Create ProxyUser object from user_info dict
+        proxy_user = ProxyUser(user_info)
+        return (proxy_user, token)
 
     def validate_token(self, token: str) -> Optional[dict]:
         """
@@ -97,8 +98,8 @@ class BackendTokenAuthentication(authentication.BaseAuthentication):
                 proxy_id = config_service.get_proxy_id()
 
             if not workspace_id or not proxy_id:
-                logger.warning("workspace_id or proxy_id not available - cannot validate token")
-                raise exceptions.AuthenticationFailed('Proxy not initialized.')
+                logger.error("Proxy not initialized - workspace_id or proxy_id not available")
+                raise exceptions.AuthenticationFailed('Proxy not initialized. WebSocket not connected.')
 
         except Exception as e:
             logger.error(f"Error getting workspace/proxy IDs: {e}", exc_info=True)
@@ -164,7 +165,6 @@ class BackendTokenAuthentication(authentication.BaseAuthentication):
                     'is_authenticated': True,
                 }
 
-                logger.debug(f"Token validated for user {username} ({full_name}, role: {role}) - workspace: {workspace_id}, proxy: {proxy_id}")
                 return user_info
 
             elif response.status_code == 401:
@@ -215,9 +215,11 @@ class ProxyUser:
         self.email = user_info.get('email')
         self.role = user_info.get('role')
         self.is_superuser = user_info.get('is_superuser', False)
+        self.full_name = user_info.get('full_name', 'Unknown User')
         self.is_authenticated = True
         self.is_active = True
         self.workspace_id = user_info.get('workspace_id')
+        self.proxy_id = user_info.get('proxy_id')
         self.session_id = user_info.get('session_id')
 
     def __str__(self):

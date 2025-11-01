@@ -689,6 +689,7 @@ def get_websocket_client() -> Optional[ProxyWebSocketClient]:
         ProxyStatusChangedHandler,
         SessionDeletedHandler,
         ScanDeletedHandler,
+        SubjectDeletedHandler,
     )
 
     api_url = getattr(settings, 'ITH_URL', None)
@@ -735,7 +736,8 @@ def get_websocket_client() -> Optional[ProxyWebSocketClient]:
 
     client.register_event_handler('session.deleted', SessionDeletedHandler(mock_consumer).handle)
     client.register_event_handler('scan.deleted', ScanDeletedHandler(mock_consumer).handle)
+    client.register_event_handler('subject.deleted', SubjectDeletedHandler(mock_consumer).handle)
 
-    logger.info(" Registered 9 event handlers: dispatch, config, deletion, new_scan")
+    logger.info(" Registered 10 event handlers: dispatch, config, deletion, new_scan")
 
     return client
