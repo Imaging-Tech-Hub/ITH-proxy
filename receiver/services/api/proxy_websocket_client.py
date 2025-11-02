@@ -109,6 +109,12 @@ class ProxyWebSocketClient:
             message_type = data.get('type')
             event_type = data.get('event_type')
 
+            if not event_type and 'payload' in data:
+                nested_payload = data.get('payload', {})
+                event_type = nested_payload.get('event_type')
+                if event_type:
+                    logger.debug(f"Event type found in nested payload: {event_type}")
+
             if message_type == 'connected':
                 self.workspace_id = data.get('workspace_id')
                 self.proxy_id = data.get('proxy_id')
@@ -129,8 +135,14 @@ class ProxyWebSocketClient:
             elif event_type:
                 logger.info(f"Received event '{event_type}' - connection already established")
 
-                self.workspace_id = data.get('workspace_id')
-                self.proxy_id = data.get('entity_id')
+                # Extract workspace_id and entity_id from nested payload if present
+                if 'payload' in data:
+                    nested_payload = data.get('payload', {})
+                    self.workspace_id = nested_payload.get('workspace_id', data.get('workspace_id'))
+                    self.proxy_id = nested_payload.get('entity_id', data.get('entity_id'))
+                else:
+                    self.workspace_id = data.get('workspace_id')
+                    self.proxy_id = data.get('entity_id')
 
                 if not self.workspace_id or not self.proxy_id:
                     logger.error(f"Missing workspace_id or entity_id in event message")
@@ -144,7 +156,22 @@ class ProxyWebSocketClient:
 
                 logger.info(f"WebSocket connected via event - Workspace: {self.workspace_id}, Proxy: {self.proxy_id}")
 
-                asyncio.create_task(self._handle_event(event_type, data))
+                # Normalize data structure (flatten nested payload)
+                if 'payload' in data:
+                    nested_payload = data.get('payload', {})
+                    normalized_data = {
+                        'event_type': event_type,
+                        'workspace_id': nested_payload.get('workspace_id', data.get('workspace_id')),
+                        'timestamp': nested_payload.get('timestamp', data.get('timestamp')),
+                        'correlation_id': nested_payload.get('correlation_id'),
+                        'entity_type': nested_payload.get('entity_type'),
+                        'entity_id': nested_payload.get('entity_id'),
+                        'payload': nested_payload.get('payload', {})
+                    }
+                else:
+                    normalized_data = data
+
+                asyncio.create_task(self._handle_event(event_type, normalized_data))
 
                 return True
 
@@ -176,7 +203,7 @@ class ProxyWebSocketClient:
         ip_address: str,
         port: int,
         ae_title: str,
-        resolver_url: str = "",
+        api_url: str = "",
         proxy_version: str = "1.0.0"
     ) -> bool:
         """
@@ -186,7 +213,7 @@ class ProxyWebSocketClient:
             ip_address: Proxy IP address
             port: DICOM port
             ae_title: DICOM AE title
-            resolver_url: PHI resolver URL
+            api_url: Proxy API base URL (e.g., http://192.168.1.100:8080/api)
             proxy_version: Proxy software version
 
         Returns:
@@ -202,7 +229,7 @@ class ProxyWebSocketClient:
                 "ip_address": ip_address,
                 "port": port,
                 "ae_title": ae_title,
-                "resolver_information_url": resolver_url,
+                "api_url": api_url,
                 "proxy_version": proxy_version
             }
 
@@ -576,6 +603,30 @@ class ProxyWebSocketClient:
         logger.warning("Could not detect host IP, using localhost (DICOM devices must be on same machine)")
         return '127.0.0.1'
 
+    def _construct_api_url(self, ip_address: str) -> str:
+        """
+        Construct the public API URL for this proxy.
+
+        Args:
+            ip_address: The IP address where proxy is accessible
+
+        Returns:
+            Full API base URL (e.g., http://192.168.1.100:8080/api)
+        """
+        from django.conf import settings
+
+        explicit_url = getattr(settings, 'PROXY_API_URL', '').strip()
+        if explicit_url:
+            if not explicit_url.endswith('/api') and not explicit_url.endswith('/api/'):
+                explicit_url = explicit_url.rstrip('/') + '/api'
+            logger.info(f"Using explicit PROXY_API_URL: {explicit_url}")
+            return explicit_url
+
+        api_port = getattr(settings, 'API_PORT', 8080)
+        api_url = f"http://{ip_address}:{api_port}/api"
+        logger.info(f"Auto-constructed API URL: {api_url}")
+        return api_url
+
     async def _send_initial_config(self):
         """
         Send initial configuration update after connection.
@@ -589,13 +640,17 @@ class ProxyWebSocketClient:
             ip_address = self._get_host_ip_address()
             proxy_version = getattr(settings, 'PROXY_VERSION', '1.0.0')
 
-            logger.info(f"Sending config update with IP: {ip_address}:{settings.DICOM_PORT}")
+            api_url = self._construct_api_url(ip_address)
+
+            logger.info(f"Sending config update:")
+            logger.info(f"  DICOM: {ip_address}:{settings.DICOM_PORT} (AE: {settings.DICOM_AE_TITLE})")
+            logger.info(f"  API: {api_url}")
 
             await self.send_config_update(
                 ip_address=ip_address,
                 port=settings.DICOM_PORT,
                 ae_title=settings.DICOM_AE_TITLE,
-                resolver_url='',
+                api_url=api_url,
                 proxy_version=proxy_version
             )
 
@@ -634,6 +689,7 @@ def get_websocket_client() -> Optional[ProxyWebSocketClient]:
         ProxyStatusChangedHandler,
         SessionDeletedHandler,
         ScanDeletedHandler,
+        SubjectDeletedHandler,
     )
 
     api_url = getattr(settings, 'ITH_URL', None)
@@ -680,7 +736,8 @@ def get_websocket_client() -> Optional[ProxyWebSocketClient]:
 
     client.register_event_handler('session.deleted', SessionDeletedHandler(mock_consumer).handle)
     client.register_event_handler('scan.deleted', ScanDeletedHandler(mock_consumer).handle)
+    client.register_event_handler('subject.deleted', SubjectDeletedHandler(mock_consumer).handle)
 
-    logger.info(" Registered 9 event handlers: dispatch, config, deletion, new_scan")
+    logger.info(" Registered 10 event handlers: dispatch, config, deletion, new_scan")
 
     return client

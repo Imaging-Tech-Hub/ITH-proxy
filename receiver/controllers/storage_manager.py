@@ -57,7 +57,13 @@ class StorageManager:
         """Get storage path for a series."""
         return self.file_manager.get_series_path(patient_id, study_instance_uid, series_instance_uid)
 
-    def store_dicom_file(self, dataset: Dataset, filename: str) -> Dict[str, Any]:
+    def store_dicom_file(
+        self,
+        dataset: Dataset,
+        filename: str,
+        study_phi_metadata: Optional[Dict[str, str]] = None,
+        series_phi_metadata: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
         """
         Store a DICOM file and update database records.
         Instance metadata is stored in XML file for performance.
@@ -69,6 +75,8 @@ class StorageManager:
         Args:
             dataset: pydicom Dataset object
             filename: Filename for the DICOM file
+            study_phi_metadata: Study-level PHI metadata to store
+            series_phi_metadata: Series-level PHI metadata to store
 
         Returns:
             Dict containing study and series objects
@@ -86,7 +94,8 @@ class StorageManager:
             patient_name=str(patient_name),
             patient_id=str(patient_id),
             storage_path=study_path,
-            dataset=dataset
+            dataset=dataset,
+            study_phi_metadata=study_phi_metadata
         )
 
         series_path = self._get_series_path(str(patient_id), study_uid, series_uid)
@@ -94,7 +103,8 @@ class StorageManager:
             series_uid=series_uid,
             study=study,
             storage_path=str(series_path),
-            dataset=dataset
+            dataset=dataset,
+            series_phi_metadata=series_phi_metadata
         )
 
         self.file_manager.ensure_directory_exists(series_path)

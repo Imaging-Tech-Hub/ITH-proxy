@@ -104,7 +104,7 @@ class ProxyConfigService:
                 'ae_title': ae_title,
                 'mode': proxy_config.get('mode', 'private'),  # 'public' or 'private'
                 'enable_phi_anonymization': proxy_config.get('enable_phi_anonymization', False),
-                'resolver_information_url': proxy_config.get('resolver_information_url', ''),
+                'api_url': proxy_config.get('api_url', ''),
                 'is_active': config_data.get('is_active', True),
                 'metadata': config_data.get('metadata', {})
             }
@@ -290,8 +290,8 @@ class ProxyConfigService:
             proxy_config.port = api_config.get('port', proxy_config.port)
             proxy_config.ae_title = api_config.get('ae_title', proxy_config.ae_title)
 
-            resolver_url = api_config.get('resolver_information_url')
-            proxy_config.resolver_api_url = resolver_url if resolver_url is not None else ''
+            api_url = api_config.get('api_url')
+            proxy_config.resolver_api_url = api_url if api_url is not None else ''
 
             proxy_config.save()
 

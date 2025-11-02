@@ -61,12 +61,18 @@ class BackendTokenAuthentication(authentication.BaseAuthentication):
         if not user_info:
             raise exceptions.AuthenticationFailed('Invalid or expired token.')
 
-
-        return (user_info, token)
+        # Create ProxyUser object from user_info dict
+        proxy_user = ProxyUser(user_info)
+        return (proxy_user, token)
 
     def validate_token(self, token: str) -> Optional[dict]:
         """
         Validate token against the ITH backend API.
+
+        Uses GET /workspaces/{workspace_id}/proxies/{proxy_id} endpoint which:
+        1. Validates the token
+        2. Validates user has access to this specific proxy
+        3. Returns proxy information if authorized
 
         Args:
             token: JWT access token
@@ -74,39 +80,103 @@ class BackendTokenAuthentication(authentication.BaseAuthentication):
         Returns:
             User information dict if valid, None otherwise
         """
+        # Get workspace_id and proxy_id from WebSocket client or config service
+        try:
+            from receiver.services.api import get_websocket_client
+            from receiver.services.config import get_config_service
+
+            ws_client = get_websocket_client()
+            config_service = get_config_service()
+
+            # Try to get IDs from WebSocket client first
+            workspace_id = ws_client.workspace_id if ws_client else None
+            proxy_id = ws_client.proxy_id if ws_client else None
+
+            # Fallback to config service if WebSocket not connected yet
+            if not workspace_id and config_service:
+                workspace_id = config_service.get_workspace_id()
+                proxy_id = config_service.get_proxy_id()
+
+            if not workspace_id or not proxy_id:
+                logger.error("Proxy not initialized - workspace_id or proxy_id not available")
+                raise exceptions.AuthenticationFailed('Proxy not initialized. WebSocket not connected.')
+
+        except Exception as e:
+            logger.error(f"Error getting workspace/proxy IDs: {e}", exc_info=True)
+            raise exceptions.AuthenticationFailed('Proxy configuration error.')
+
         backend_url = getattr(settings, 'ITH_URL', 'http://localhost:8000')
-        validate_endpoint = f"{backend_url}/api/v1/auth/tokens/validate"
+        validate_endpoint = f"{backend_url}/api/v1/workspaces/{workspace_id}/proxies/{proxy_id}"
 
         try:
             headers = {
                 'Authorization': f'Bearer {token}',
-                'Content-Type': 'application/json'
+                'Accept': 'application/json'
             }
 
-            response = requests.post(
+            # Request with include_user_info=true to get user details if available
+            params = {
+                'include_user_info': 'true'
+            }
+
+            response = requests.get(
                 validate_endpoint,
                 headers=headers,
+                params=params,
                 timeout=5
             )
 
             if response.status_code == 200:
                 data = response.json()
 
+                # Extract user info from audit.created_by (when include_user_info=true)
+                audit_data = data.get('audit', {})
+                created_by = audit_data.get('created_by')
+
+                # If created_by is a dict (user info included), extract from it
+                if isinstance(created_by, dict):
+                    user_id = created_by.get('id', 'unknown')
+                    username = created_by.get('username', 'authenticated_user')
+                    email = created_by.get('email')
+                    role = created_by.get('role', 'user')
+                    is_superuser = role == 'superuser'  # Backend uses 'superuser' role
+                    first_name = created_by.get('first_name', '')
+                    last_name = created_by.get('last_name', '')
+                    full_name = created_by.get('full_name') or f"{first_name} {last_name}".strip()
+                else:
+                    # Fallback if user info not included (should not happen with include_user_info=true)
+                    user_id = created_by if isinstance(created_by, str) else 'unknown'
+                    username = 'authenticated_user'
+                    email = None
+                    role = 'user'
+                    is_superuser = False
+                    full_name = 'Unknown User'
+
                 user_info = {
-                    'user_id': data.get('user', {}).get('id'),
-                    'username': data.get('user', {}).get('username'),
-                    'email': data.get('user', {}).get('email'),
-                    'role': data.get('user', {}).get('role'),
-                    'is_superuser': data.get('user', {}).get('is_superuser', False),
-                    'session_id': data.get('session', {}).get('id'),
-                    'workspace_id': data.get('user', {}).get('workspace_id'),
+                    'user_id': user_id,
+                    'username': username,
+                    'email': email,
+                    'role': role,
+                    'is_superuser': is_superuser,
+                    'full_name': full_name,
+                    'session_id': None,
+                    'workspace_id': workspace_id,
+                    'proxy_id': proxy_id,
+                    'is_authenticated': True,
                 }
 
-                logger.debug(f"Token validated for user: {user_info.get('username')}")
                 return user_info
 
             elif response.status_code == 401:
                 logger.warning("Token validation failed: Unauthorized")
+                return None
+
+            elif response.status_code == 403:
+                logger.warning("Token validation failed: Forbidden - user doesn't have access to this proxy")
+                return None
+
+            elif response.status_code == 404:
+                logger.warning("Token validation failed: Proxy not found")
                 return None
 
             else:
@@ -145,9 +215,11 @@ class ProxyUser:
         self.email = user_info.get('email')
         self.role = user_info.get('role')
         self.is_superuser = user_info.get('is_superuser', False)
+        self.full_name = user_info.get('full_name', 'Unknown User')
         self.is_authenticated = True
         self.is_active = True
         self.workspace_id = user_info.get('workspace_id')
+        self.proxy_id = user_info.get('proxy_id')
         self.session_id = user_info.get('session_id')
 
     def __str__(self):

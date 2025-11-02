@@ -35,8 +35,8 @@ RUN mkdir -p /app/data/logs && \
     mkdir -p /app/data/config && \
     chmod -R 755 /app/data
 
-# Collect static files (if needed for admin)
-RUN python manage.py collectstatic --noinput || true
+# Collect static files for Django admin and WhiteNoise
+RUN python manage.py collectstatic --noinput
 
 # Expose ports
 # 8080 - Django HTTP server

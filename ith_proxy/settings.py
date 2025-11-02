@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'corsheaders',  # CORS headers support
     'rest_framework',
     'channels',
     'receiver',
@@ -53,6 +54,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Must be after SecurityMiddleware
+    'corsheaders.middleware.CorsMiddleware',  # CORS - Must be before CommonMiddleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -154,6 +157,17 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# WhiteNoise configuration for production static file serving
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
@@ -273,6 +287,56 @@ CHANNEL_LAYERS = {
 }
 
 # =============================================================================
+# Cache Configuration
+# =============================================================================
+
+# Cache backend for PHI metadata queries
+# Using LocMemCache for fast in-memory caching
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'phi-metadata-cache',
+        'OPTIONS': {
+            'MAX_ENTRIES': 10000,  # Max number of cache entries
+        },
+        'TIMEOUT': int(os.getenv('CACHE_TIMEOUT', '300')),  # Cache timeout in seconds (default: 5 minutes)
+    }
+}
+
+# =============================================================================
+# CORS Configuration
+# =============================================================================
+
+# Allow all origins for API access (frontend can access from any domain)
+CORS_ALLOW_ALL_ORIGINS = True
+
+# Allow credentials (cookies, authorization headers)
+CORS_ALLOW_CREDENTIALS = True
+
+# Allow all standard HTTP methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# Allow all headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# =============================================================================
 # ITH API Configuration
 # =============================================================================
 
@@ -284,3 +348,11 @@ ITH_TOKEN = os.getenv('ITH_TOKEN', '')
 
 # Proxy version
 PROXY_VERSION = os.getenv('PROXY_VERSION', '1.0.0')
+
+# Proxy API Configuration
+# HTTP port for Django API server (default: 8080 in Docker, 8000 for dev)
+API_PORT = int(os.getenv('API_PORT', '8080'))
+
+# Public API URL to be shared with ITH backend
+# If not set, will be auto-constructed as http://{ip_address}:{API_PORT}/api
+PROXY_API_URL = os.getenv('PROXY_API_URL', '')  # Leave empty for auto-detection

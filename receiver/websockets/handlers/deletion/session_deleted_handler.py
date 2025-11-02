@@ -24,13 +24,14 @@ class SessionDeletedHandler(BaseEventHandler):
         """
         Handle session deletion event.
 
-        Payload:
+        Backend sends:
         {
-          "entity_id": "sess_def456",
+          "event_type": "session.deleted",
+          "entity_id": "7257cffb-e067-4a83-ac63-14889a527871",
           "payload": {
-            "subject_id": "subj_ghi789",
-            "session_label": "MRI-2025-001",
-            "study_instance_uid": "1.2.840.113619.2.55.3.123456789.1234"
+            "subject_id": "adb85943-6e7e-4e27-b4ec-566d03369e76",
+            "session_label": "ses-001",
+            "study_instance_uid": "1.3.12.2.1107.5.2.43.166194.30000022051108155375500000013"
           }
         }
         """

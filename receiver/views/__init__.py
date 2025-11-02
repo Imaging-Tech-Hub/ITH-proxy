@@ -6,7 +6,15 @@ Organized by domain:
 - phi/: Protected Health Information (PHI) endpoints
 """
 from .health import PublicHealthCheckView, AuthenticatedStatusView
-from .phi import PHIMetadataAPIView
+from .phi import (
+    PHIMetadataAPIView,
+    PatientPHIMetadataView,
+    StudyPHIMetadataView,
+    SeriesPHIMetadataView,
+    PatientPHIBatchView,
+    StudyPHIBatchView,
+    SeriesPHIBatchView,
+)
 
 __all__ = [
     # Health Views
@@ -15,4 +23,10 @@ __all__ = [
 
     # PHI Views
     'PHIMetadataAPIView',
+    'PatientPHIMetadataView',
+    'StudyPHIMetadataView',
+    'SeriesPHIMetadataView',
+    'PatientPHIBatchView',
+    'StudyPHIBatchView',
+    'SeriesPHIBatchView',
 ]

@@ -4,7 +4,8 @@ Uses pydicom's built-in anonymization for DICOM de-identification.
 Follows DICOM PS3.15 Annex E de-identification profiles.
 """
 import logging
-from typing import Dict, Tuple, Optional, List, Callable
+import uuid
+from typing import Dict, Tuple, Optional, List, Callable, Any
 
 from pydicom import Dataset
 
@@ -17,20 +18,20 @@ class PHIAnonymizer:
     """
     Anonymizes patient health information (PHI) in DICOM files.
     Uses pydicom's standard anonymization with custom patient mapping.
+
+    PHI is categorized into three levels:
+    - Patient-level: Stored in PatientMapping
+    - Study-level: Stored in Session
+    - Series-level: Stored in Scan
     """
 
-    # DICOM Basic Application Level Confidentiality Profile (PS3.15 Annex E)
-    # Tags to store and clear/anonymize (will be restored on query)
-    TAGS_TO_ANONYMIZE = [
-        # Patient identifiers
-        'PatientName',
-        'PatientID',
+    # Patient-level PHI (stored in PatientMapping table)
+    PATIENT_LEVEL_TAGS = [
         'PatientBirthDate',
         'PatientBirthName',
-        # 'PatientAge',
         'PatientSize',
         'PatientWeight',
-        # 'PatientSex',
+        'PatientSex',
         'OtherPatientIDs',
         'OtherPatientNames',
         'EthnicGroup',
@@ -38,20 +39,14 @@ class PHIAnonymizer:
         'AdditionalPatientHistory',
         'PatientComments',
         'MedicalRecordLocator',
-        # Study/Series information - dates/times only
-        # 'StudyDate',
-        # 'SeriesDate',
-        # 'AcquisitionDate',
-        # 'ContentDate',
-        # 'StudyTime',
-        # 'SeriesTime',
-        # 'AcquisitionTime',
-        # 'ContentTime',
-        # 'StudyID',
-        # NOTE: ProtocolName excluded - needed for clinical interpretation
-        # NOTE: SeriesDescription excluded - needed for scan identification
-        # NOTE: StudyDescription excluded - needed for study context
-        # Institution/Personnel information
+        'IssuerOfPatientID',
+    ]
+
+    # Study-level PHI (stored in Session table)
+    STUDY_LEVEL_TAGS = [
+        'StudyDate',
+        'StudyTime',
+        'StudyID',
         'InstitutionName',
         'InstitutionAddress',
         'InstitutionalDepartmentName',
@@ -63,12 +58,30 @@ class PHIAnonymizer:
         'PerformingPhysicianName',
         'NameOfPhysiciansReadingStudy',
         'OperatorsName',
-        # Device/Technical information
-        'DeviceSerialNumber',
-        # Comments and other descriptive fields
-        'ImageComments',
-        'IssuerOfPatientID',
     ]
+
+    # Series-level PHI (stored in Scan table)
+    SERIES_LEVEL_TAGS = [
+        'SeriesDate',
+        'SeriesTime',
+        'AcquisitionDate',
+        'AcquisitionTime',
+        'ContentDate',
+        'ContentTime',
+        'DeviceSerialNumber',
+        'ImageComments',
+    ]
+
+    # All tags to anonymize (union of all levels)
+    TAGS_TO_ANONYMIZE = PATIENT_LEVEL_TAGS + STUDY_LEVEL_TAGS + SERIES_LEVEL_TAGS + [
+        'PatientName',
+        'PatientID',
+    ]
+
+    # NOTE: PatientAge is NOT stored - it's redundant and can be calculated from PatientBirthDate + StudyDate
+    # NOTE: ProtocolName excluded - needed for clinical interpretation
+    # NOTE: SeriesDescription excluded - needed for scan identification
+    # NOTE: StudyDescription excluded - needed for study context
 
     TAGS_TO_REMOVE = [
         'FrameOfReferenceUID',
@@ -89,6 +102,31 @@ class PHIAnonymizer:
         """
         self.mapping_service = mapping_service or PatientMappingService()
 
+    def _generate_unique_anonymous_id(self) -> str:
+        """
+        Generate a unique 12-character anonymous ID using UUID.
+
+        Uses 12 hex characters from UUID4 for 281 trillion possible combinations.
+        This provides virtually zero collision probability even with millions of patients
+        across multiple proxies.
+
+        Returns:
+            Unique 12-character ID string (e.g., "a1b2c3d4e5f6")
+        """
+        max_attempts = 100
+        for _ in range(max_attempts):
+            # Generate UUID4 and take first 12 characters of hex representation
+            random_uuid = uuid.uuid4()
+            anonymous_id = random_uuid.hex[:12]
+
+            # Check if this ID already exists
+            existing = self.mapping_service.find_by_anonymous(anonymous_id=f"ANON-{anonymous_id}")
+            if not existing:
+                return anonymous_id
+
+        # Fallback: if we can't find a unique ID after max_attempts, raise an error
+        raise ValueError(f"Could not generate unique anonymous ID after {max_attempts} attempts")
+
     def anonymize_patient(self, patient_name: str, patient_id: str) -> Dict[str, str]:
         """
         Anonymize patient information.
@@ -99,8 +137,8 @@ class PHIAnonymizer:
 
         Returns:
             Dict containing:
-                - anonymous_name: Anonymous patient name (e.g., "ANON-00001")
-                - anonymous_id: Anonymous patient ID (e.g., "ANON-00001")
+                - anonymous_name: Anonymous patient name (e.g., "ANON-a1b2c3d4e5f6")
+                - anonymous_id: Anonymous patient ID (e.g., "ANON-a1b2c3d4e5f6")
                 - original_name: Original patient name
                 - original_id: Original patient ID
         """
@@ -117,8 +155,10 @@ class PHIAnonymizer:
                 'original_id': mapping.original_patient_id,
             }
 
-        anonymous_name = f"ANON-{patient_id}"
-        anonymous_id = f"ANON-{patient_id}"
+        # Generate unique 12-character anonymous ID
+        unique_id = self._generate_unique_anonymous_id()
+        anonymous_name = f"ANON-{unique_id}"
+        anonymous_id = f"ANON-{unique_id}"
 
         try:
             mapping, created = self.mapping_service.get_or_create_mapping(
@@ -144,43 +184,59 @@ class PHIAnonymizer:
             logger.error(f"Error creating patient mapping: {e}", exc_info=True)
             raise
 
-    def anonymize_dataset(self, dataset: Dataset) -> Tuple[Dataset, Dict[str, str]]:
+    def anonymize_dataset(self, dataset: Dataset) -> Tuple[Dataset, Dict[str, Any]]:
         """
         Anonymize patient data in a DICOM dataset using pydicom built-in methods.
-        Stores removed PHI data for later restoration.
+        Extracts and categorizes PHI into three levels for storage.
 
         Args:
             dataset: pydicom Dataset object
 
         Returns:
-            Tuple of (anonymized_dataset, mapping_info)
+            Tuple of (anonymized_dataset, phi_data) where phi_data contains:
+                - mapping: Patient mapping info (anonymous/original names and IDs)
+                - patient_phi: Patient-level PHI metadata
+                - study_phi: Study-level PHI metadata
+                - series_phi: Series-level PHI metadata
         """
         patient_name = str(getattr(dataset, 'PatientName', 'UNKNOWN'))
         patient_id = str(getattr(dataset, 'PatientID', 'UNKNOWN'))
 
-        phi_metadata = self._extract_phi_metadata(dataset)
+        # Extract PHI at three levels
+        patient_phi = self._extract_patient_phi(dataset)
+        study_phi = self._extract_study_phi(dataset)
+        series_phi = self._extract_series_phi(dataset)
 
+        # Create or get patient mapping
         mapping = self.anonymize_patient(patient_name, patient_id)
 
-        self._store_phi_metadata(patient_name, patient_id, phi_metadata)
+        # Store patient-level PHI in PatientMapping
+        self._store_patient_phi(patient_name, patient_id, patient_phi)
 
+        # Apply anonymization to dataset
         self._apply_pydicom_anonymization(dataset, mapping)
 
-        return dataset, mapping
+        # Return dataset and all PHI levels
+        return dataset, {
+            'mapping': mapping,
+            'patient_phi': patient_phi,
+            'study_phi': study_phi,
+            'series_phi': series_phi,
+        }
 
-    def _extract_phi_metadata(self, dataset: Dataset) -> Dict[str, str]:
+    def _extract_patient_phi(self, dataset: Dataset) -> Dict[str, str]:
         """
-        Extract PHI metadata before anonymization.
+        Extract patient-level PHI metadata before anonymization.
 
         Args:
             dataset: DICOM dataset
 
         Returns:
-            Dict of tag names and their values
+            Dict of patient-level tag names and their values
         """
         phi_data = {}
 
-        for tag_name in self.TAGS_TO_ANONYMIZE:
+        for tag_name in self.PATIENT_LEVEL_TAGS:
             if hasattr(dataset, tag_name):
                 value = getattr(dataset, tag_name)
                 if value:
@@ -188,14 +244,54 @@ class PHIAnonymizer:
 
         return phi_data
 
-    def _store_phi_metadata(self, patient_name: str, patient_id: str, phi_metadata: Dict[str, str]) -> None:
+    def _extract_study_phi(self, dataset: Dataset) -> Dict[str, str]:
         """
-        Store PHI metadata in PatientMapping.
+        Extract study-level PHI metadata before anonymization.
+
+        Args:
+            dataset: DICOM dataset
+
+        Returns:
+            Dict of study-level tag names and their values
+        """
+        phi_data = {}
+
+        for tag_name in self.STUDY_LEVEL_TAGS:
+            if hasattr(dataset, tag_name):
+                value = getattr(dataset, tag_name)
+                if value:
+                    phi_data[tag_name] = str(value)
+
+        return phi_data
+
+    def _extract_series_phi(self, dataset: Dataset) -> Dict[str, str]:
+        """
+        Extract series-level PHI metadata before anonymization.
+
+        Args:
+            dataset: DICOM dataset
+
+        Returns:
+            Dict of series-level tag names and their values
+        """
+        phi_data = {}
+
+        for tag_name in self.SERIES_LEVEL_TAGS:
+            if hasattr(dataset, tag_name):
+                value = getattr(dataset, tag_name)
+                if value:
+                    phi_data[tag_name] = str(value)
+
+        return phi_data
+
+    def _store_patient_phi(self, patient_name: str, patient_id: str, patient_phi: Dict[str, str]) -> None:
+        """
+        Store patient-level PHI metadata in PatientMapping.
 
         Args:
             patient_name: Original patient name
             patient_id: Original patient ID
-            phi_metadata: Extracted PHI data
+            patient_phi: Extracted patient-level PHI data
         """
         try:
             mapping = self.mapping_service.find_by_original(
@@ -203,14 +299,14 @@ class PHIAnonymizer:
                 original_id=patient_id
             )
 
-            if mapping and phi_metadata:
+            if mapping and patient_phi:
                 existing_metadata = mapping.get_phi_metadata()
-                existing_metadata.update(phi_metadata)
+                existing_metadata.update(patient_phi)
                 mapping.set_phi_metadata(existing_metadata)
                 mapping.save()
-                logger.debug(f"Stored PHI metadata for {mapping.anonymous_patient_name}")
+                logger.debug(f"Stored patient-level PHI for {mapping.anonymous_patient_name}")
         except Exception as e:
-            logger.error(f"Error storing PHI metadata: {e}", exc_info=True)
+            logger.error(f"Error storing patient PHI metadata: {e}", exc_info=True)
 
     def _apply_pydicom_anonymization(self, dataset: Dataset, mapping: Dict[str, str]) -> None:
         """
