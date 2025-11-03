@@ -1,17 +1,19 @@
 version: '3.8'
 
 services:
-  proxy:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ith-proxy
+    container_name: ith-proxy-app
     restart: unless-stopped
 
+    expose:
+      # Django HTTP API (internal only, accessed via nginx)
+      - "8080"
+
     ports:
-      # Django HTTP API
-      - "8080:8080"
-      # DICOM SCP Server
+      # DICOM SCP Server (direct access, not via nginx)
       - "${DICOM_PORT:-11112}:${DICOM_PORT:-11112}"
 
     volumes:
@@ -70,6 +72,36 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  nginx:
+    image: nginx:alpine
+    container_name: ith-proxy-nginx
+    restart: unless-stopped
+
+    ports:
+      # HTTPS
+      - "${HTTPS_PORT:-443}:443"
+      # HTTP (redirects to HTTPS)
+      - "${HTTP_PORT:-80}:80"
+
+    volumes:
+      # Nginx configuration
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # SSL certificates
+      - ./certs:/etc/nginx/certs:ro
+
+    depends_on:
+      - app
+
+    networks:
+      - ith-network
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 networks:
   ith-network:

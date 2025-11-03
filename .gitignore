@@ -17,6 +17,7 @@ db.sqlite3-journal
 /static/
 /staticfiles/
 /media/
+/staticfiles/
 
 # Data Directory (logs, database, archives, studies, config)
 data/
@@ -40,3 +41,9 @@ Thumbs.db
 dist/
 build/
 *.egg-info/
+
+# SSL Certificates (never commit private keys!)
+certs/*.pem
+certs/*.key
+certs/*.crt
+certs/*.csr
