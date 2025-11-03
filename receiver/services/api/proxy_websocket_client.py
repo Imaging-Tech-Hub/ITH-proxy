@@ -606,14 +606,16 @@ class ProxyWebSocketClient:
     def _construct_api_url(self, ip_address: str) -> str:
         """
         Construct the public API URL for this proxy.
+        Automatically uses HTTPS if HTTPS_PORT is configured.
 
         Args:
             ip_address: The IP address where proxy is accessible
 
         Returns:
-            Full API base URL (e.g., http://192.168.1.100:8080/api)
+            Full API base URL (e.g., https://192.168.1.100/api or http://192.168.1.100:8080/api)
         """
         from django.conf import settings
+        import os
 
         explicit_url = getattr(settings, 'PROXY_API_URL', '').strip()
         if explicit_url:
@@ -622,9 +624,26 @@ class ProxyWebSocketClient:
             logger.info(f"Using explicit PROXY_API_URL: {explicit_url}")
             return explicit_url
 
-        api_port = getattr(settings, 'API_PORT', 8080)
-        api_url = f"http://{ip_address}:{api_port}/api"
-        logger.info(f"Auto-constructed API URL: {api_url}")
+        # Check if HTTPS is enabled (HTTPS_PORT environment variable is set)
+        https_port = os.getenv('HTTPS_PORT', '').strip()
+
+        if https_port and https_port != '':
+            # HTTPS is enabled
+            protocol = 'https'
+            # Use standard HTTPS port 443, don't include in URL
+            if https_port == '443':
+                api_url = f"{protocol}://{ip_address}/api"
+                logger.info(f"Auto-constructed HTTPS API URL (port 443): {api_url}")
+            else:
+                # Non-standard HTTPS port, include in URL
+                api_url = f"{protocol}://{ip_address}:{https_port}/api"
+                logger.info(f"Auto-constructed HTTPS API URL (port {https_port}): {api_url}")
+        else:
+            # HTTP fallback
+            api_port = getattr(settings, 'API_PORT', 8080)
+            api_url = f"http://{ip_address}:{api_port}/api"
+            logger.info(f"Auto-constructed HTTP API URL: {api_url}")
+
         return api_url
 
     async def _send_initial_config(self):
