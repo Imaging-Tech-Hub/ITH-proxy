@@ -52,14 +52,16 @@ class StudyUploader:
     def upload_study(
         self,
         zip_path: Path,
-        study_info: Dict[str, Any]
+        study_info: Dict[str, Any],
+        attempt_override: Optional[int] = None
     ) -> Tuple[bool, Optional[Dict[str, Any]]]:
         """
-        Upload a study archive to ITH API with duplicate upload prevention.
+        Upload a study archive to ITH API with duplicate upload prevention and tracking.
 
         Args:
             zip_path: Path to ZIP archive
             study_info: Study metadata (name, patient_id, etc.)
+            attempt_override: Force specific attempt number (for manual re-uploads)
 
         Returns:
             Tuple of (success, response_data)
@@ -82,6 +84,35 @@ class StudyUploader:
         if not lock_acquired:
             logger.warning(f"🔒 Upload already in progress for study {study_uid}, skipping duplicate")
             return False, {'error': 'Upload already in progress'}
+
+        # Get or create session and upload log
+        from receiver.models import Session, UploadLog
+        from django.utils import timezone
+
+        try:
+            session = Session.objects.get(study_instance_uid=study_uid)
+        except Session.DoesNotExist:
+            logger.error(f"Session not found: {study_uid}")
+            lock_manager.release_lock('upload', 'study', study_uid)
+            return False, None
+
+        # Determine attempt number
+        attempt_num = attempt_override or (session.upload_attempt_count + 1)
+
+        # Create upload log
+        upload_log = UploadLog.objects.create(
+            session=session,
+            attempt_number=attempt_num,
+            status='in_progress',
+            upload_file_size=file_size,
+            started_at=timezone.now()
+        )
+
+        # Update session status
+        session.upload_status = 'in_progress'
+        session.upload_attempt_count = attempt_num
+        session.last_upload_attempt_at = timezone.now()
+        session.save(update_fields=['upload_status', 'upload_attempt_count', 'last_upload_attempt_at'])
 
         try:
             if file_size > MAX_SINGLE_UPLOAD_SIZE:
@@ -109,6 +140,18 @@ class StudyUploader:
                         logger.info(f" Study uploaded successfully:")
                         logger.info(f"Dataset ID: {response_data.get('id', 'N/A')}")
                         logger.info(f"Status: {response_data.get('status', 'N/A')}")
+
+                        # Record success in upload log
+                        upload_log.status = 'success'
+                        upload_log.api_response_id = response_data.get('id')
+                        upload_log.completed_at = timezone.now()
+                        upload_log.duration_seconds = int((timezone.now() - upload_log.started_at).total_seconds())
+                        upload_log.save()
+
+                        # Update session status
+                        session.upload_status = 'success'
+                        session.save(update_fields=['upload_status'])
+
                         return True, response_data
                     else:
                         logger.warning(f"Upload attempt {attempt} failed - no response data")
@@ -125,6 +168,18 @@ class StudyUploader:
             logger.error(f" Failed to upload study after {self.max_retries} attempts")
             if last_error:
                 logger.error(f"Last error: {last_error}")
+
+            # Record failure in upload log
+            upload_log.status = 'failed'
+            upload_log.error_message = str(last_error)[:500] if last_error else 'Unknown error'
+            upload_log.completed_at = timezone.now()
+            upload_log.duration_seconds = int((timezone.now() - upload_log.started_at).total_seconds())
+            upload_log.save()
+
+            # Update session status
+            session.upload_status = 'failed'
+            session.last_upload_error = str(last_error)[:500] if last_error else 'Unknown error'
+            session.save(update_fields=['upload_status', 'last_upload_error'])
 
             return False, None
 

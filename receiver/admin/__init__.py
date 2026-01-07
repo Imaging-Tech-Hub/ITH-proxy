@@ -7,6 +7,7 @@ from django.contrib.auth.models import User, Group
 from .patient_mapping_admin import PatientMappingAdmin
 from .session_admin import SessionAdmin
 from .scan_admin import ScanAdmin
+from .upload_log_admin import UploadLogAdmin
 
 # Unregister default Django admin models (User and Group)
 admin.site.unregister(User)
@@ -21,4 +22,5 @@ __all__ = [
     'PatientMappingAdmin',
     'SessionAdmin',
     'ScanAdmin',
+    'UploadLogAdmin',
 ]
